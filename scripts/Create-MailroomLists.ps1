@@ -7,7 +7,9 @@
 .DESCRIPTION
   Run it once per unit, ideally on that unit's own site (for example
   /sites/MailRoom/Bahrain), and give only that unit's people access to the
-  site. That's what keeps each unit's records apart.
+  site. That's what keeps each unit's records apart. -Unit is the unit's
+  name from the app's Settings page without spaces (Saudi Arabia becomes
+  SaudiArabia); the Settings page shows the exact command.
 
   Safe to re-run: existing lists and columns are skipped. Column internal
   names have no spaces (they must match src/config.ts); display names match
@@ -113,4 +115,4 @@ Write-Host "  1. Give only the $Unit team access to this site (or these two list
 Write-Host "  2. Add the lists to the app:"
 Write-Host "     pa app add data-source --connector `"shared_sharepointonline`" --connection-id <id> --dataset `"$SiteUrl`" --table `"${Unit}PersonalMail`""
 Write-Host "     pa app add data-source --connector `"shared_sharepointonline`" --connection-id <id> --dataset `"$SiteUrl`" --table `"${Unit}DepartmentMail`""
-Write-Host "  3. Add $Unit to UNITS in src/config.ts, then npm run build and pa app push."
+Write-Host "  3. npm run build, then pa app push. Add the $Unit unit and its people in the app's Settings page if you haven't yet."

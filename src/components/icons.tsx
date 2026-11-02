@@ -69,3 +69,19 @@ export const GearIcon = (p: P) => (
     <circle cx="12" cy="12" r="6.2" />
   </svg>
 );
+
+export const TrashIcon = (p: P) => (
+  <svg {...base} {...p}><path d="M4.5 7h15M10 7V4.5h4V7M6.5 7l1 13h9l1-13" /><path d="M10.5 11v5.5M13.5 11v5.5" /></svg>
+);
+
+export const UsersIcon = (p: P) => (
+  <svg {...base} {...p}><circle cx="9" cy="8.5" r="3.2" /><path d="M3.5 19.5c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5" /><path d="M15.5 5.6a3 3 0 0 1 0 5.8M17.5 14.8c1.6.6 2.7 2.2 3 4.7" /></svg>
+);
+
+export const BuildingIcon = (p: P) => (
+  <svg {...base} {...p}><path d="M4 20.5h16M6 20.5V4h8v16.5M14 9h4v11.5" /><path d="M9 7.5h2M9 11h2M9 14.5h2" /></svg>
+);
+
+export const CopyIcon = (p: P) => (
+  <svg {...base} {...p}><rect x="8.5" y="8.5" width="11" height="11" rx="2" /><path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5" /></svg>
+);

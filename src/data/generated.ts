@@ -26,6 +26,7 @@ export interface TabularService {
   get(id: string): Promise<OperationResult<Row>>;
   create(record: Row): Promise<OperationResult<Row>>;
   update(id: string, changedFields: Row): Promise<OperationResult<Row>>;
+  delete?(id: string): Promise<OperationResult<unknown> | void>;
 }
 
 // Vite resolves this at build time; it's empty until the CLI generates a service.

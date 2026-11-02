@@ -1,9 +1,9 @@
 import type { Session } from '../data';
 import type { MailKind, MailRepository } from '../data/types';
 
-export type Page = 'home' | 'mine' | 'department' | 'add' | 'maintenance';
+export type Page = 'home' | 'mine' | 'department' | 'add' | 'maintenance' | 'settings';
 
-export const PAGES: Page[] = ['home', 'mine', 'department', 'add', 'maintenance'];
+export const PAGES: Page[] = ['home', 'mine', 'department', 'add', 'maintenance', 'settings'];
 
 export interface PageProps {
   session: Session;

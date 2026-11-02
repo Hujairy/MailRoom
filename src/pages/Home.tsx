@@ -5,7 +5,7 @@ import { mailKey } from '../data/types';
 import { firstName, greeting, plural } from '../lib/format';
 import { useAsync } from '../lib/useAsync';
 import { useStored } from '../lib/stored';
-import { BoxIcon, EnvelopeIcon, GearIcon, PlusIcon } from '../components/icons';
+import { BoxIcon, EnvelopeIcon, GearIcon, PlusIcon, UsersIcon } from '../components/icons';
 import { Slip } from '../components/Slip';
 import type { PageProps } from './shared';
 
@@ -120,6 +120,15 @@ export function Home({ session, unit, repo, admin, go, notify }: PageProps) {
                   : 'Edit details related to delivery'}
               </span>
             </button>
+            {session.generalAdmin && (
+              <button type="button" className="tile tile-desk" onClick={() => go('settings')}>
+                <UsersIcon width={26} height={26} />
+                <span className="tile-title">Settings</span>
+                <span className="tile-text">
+                  {`${plural(session.data.units.length, 'unit', 'units')} and ${plural(new Set(session.data.members.map((m) => m.email)).size, 'person', 'people')}. Add units, users and admins`}
+                </span>
+              </button>
+            )}
           </nav>
         </>
       )}

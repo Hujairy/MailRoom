@@ -6,50 +6,33 @@
 export const APP_TITLE = 'Mail Room';
 
 /**
- * Mail room units. Each unit has its own two SharePoint lists, so its data is
- * kept apart from every other unit: give each unit's people access to their
- * unit's lists only, and the app shows them only that unit.
- *
- * To add a unit: create its lists (scripts/Create-MailroomLists.ps1 -Unit Qatar),
- * add them with `pa app add data-source`, then add an entry here and republish.
- *
- * - name: shown in the app ("Bahrain Mail Room").
- * - personalMailService / departmentMailService: the services the Power Apps
- *   CLI generates for the unit's lists (spaces and "Service" are ignored
- *   when matching).
- * - admins: emails of the unit's mail room admins. Only they see Add Mail and
- *   Maintenance. Emails are matched without regard to case.
+ * General admins can open the Settings page, add and remove units, and add
+ * people to units as admins or users. They're also admins in every unit.
+ * They're set here (not in Settings) so nobody can lock them out.
  */
-export interface UnitConfig {
-  name: string;
-  personalMailService: string;
-  departmentMailService: string;
-  admins: string[];
-}
+export const GENERAL_ADMINS: string[] = ['hawra.alhujairy@bank-abc.com'];
 
-export const UNITS: UnitConfig[] = [
-  {
-    name: 'Bahrain',
-    personalMailService: 'BahrainPersonalMailService',
-    departmentMailService: 'BahrainDepartmentMailService',
-    admins: [
-      // 'mailroom.bahrain@company.com',
-    ],
-  },
-  {
-    name: 'Egypt',
-    personalMailService: 'EgyptPersonalMailService',
-    departmentMailService: 'EgyptDepartmentMailService',
-    admins: [
-      // 'mailroom.egypt@company.com',
-    ],
-  },
-];
+/**
+ * Units and people are managed in the app's Settings page and stored in two
+ * SharePoint lists (see README). These are the services the Power Apps CLI
+ * generates for them, and their internal column names.
+ */
+export const SETTINGS_LISTS = {
+  unitsService: 'MailroomUnitsService',
+  membersService: 'MailroomMembersService',
+  units: { id: 'ID', name: 'Title' },
+  members: { id: 'ID', email: 'Title', name: 'MemberName', unit: 'Unit', role: 'Role' },
+} as const;
 
-/** Admins in every unit they can open, e.g. the mail room supervisor. */
-export const SUPER_ADMINS: string[] = [
-  // 'mailroom.supervisor@company.com',
-];
+/**
+ * Each unit keeps its mail in its own two lists, named after the unit without
+ * spaces: a unit called "Saudi Arabia" uses SaudiArabiaPersonalMail and
+ * SaudiArabiaDepartmentMail. The app finds their generated services by name.
+ */
+export const unitListNames = (unit: string) => {
+  const key = unit.replace(/[^A-Za-z0-9]/g, '');
+  return { key, personal: `${key}PersonalMail`, department: `${key}DepartmentMail` };
+};
 
 /** Courier company buttons on the add forms. Staff can still type any other courier. */
 export const COURIERS = ['DHL', 'ARAMEX', 'FEDEX', 'UPS', 'BY HAND'];

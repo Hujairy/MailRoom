@@ -1,4 +1,4 @@
-import { BY_HAND, MAX_RECEIVED, MAX_WAITING, SUPER_ADMINS, type UnitConfig } from '../config';
+import { BY_HAND, GENERAL_ADMINS, MAX_RECEIVED, MAX_WAITING } from '../config';
 import type { CurrentUser, MailItem, MailKind, MailRepository, Person } from './types';
 
 const norm = (value: string) => value.trim().toLowerCase();
@@ -10,9 +10,9 @@ export function departmentKey(value: string): string {
   return value.toLowerCase().replace(/[.\s]+$/g, '').replace(/\s+/g, ' ').trim();
 }
 
-/** Mail room admins: the unit's admins plus the super admins. */
-export function isAdmin(user: Pick<CurrentUser, 'email'>, unit: UnitConfig): boolean {
-  return [...unit.admins, ...SUPER_ADMINS].some((email) => sameEmail(email, user.email));
+/** General admins (set in config.ts) manage Settings and are admins in every unit. */
+export function isGeneralAdmin(user: Pick<CurrentUser, 'email'>): boolean {
+  return GENERAL_ADMINS.some((email) => sameEmail(email, user.email));
 }
 
 export function isByHand(courier: string): boolean {

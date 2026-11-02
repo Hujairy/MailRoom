@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { APP_TITLE } from './config';
-import { openSession, type Session, type UnitAccess } from './data';
-import { DemoRepository } from './data/demo';
-import type { CurrentUser } from './data/types';
+import { openSession, resetDemo, type Session } from './data';
+import type { MailKind } from './data/types';
 import { initials } from './lib/format';
 import { transition } from './lib/motion';
 import { useStored } from './lib/stored';
@@ -15,33 +14,42 @@ import { Home } from './pages/Home';
 import { LogMail } from './pages/LogMail';
 import { Manage } from './pages/Manage';
 import { MyMail } from './pages/MyMail';
-import type { MailKind } from './data/types';
+import { Settings } from './pages/Settings';
 import { PAGES, type Page, type PageProps } from './pages/shared';
 
-const NAV: { page: Page; label: string; admin?: boolean }[] = [
-  { page: 'home', label: 'Home' },
-  { page: 'mine', label: 'My Personal Mail' },
-  { page: 'department', label: 'Department Mail' },
-  { page: 'add', label: 'Add Mail', admin: true },
-  { page: 'maintenance', label: 'Maintenance', admin: true },
+type Access = 'unit' | 'admin' | 'general';
+
+const NAV: { page: Page; label: string; access: Access }[] = [
+  { page: 'home', label: 'Home', access: 'unit' },
+  { page: 'mine', label: 'My Personal Mail', access: 'unit' },
+  { page: 'department', label: 'Department Mail', access: 'unit' },
+  { page: 'add', label: 'Add Mail', access: 'admin' },
+  { page: 'maintenance', label: 'Maintenance', access: 'admin' },
+  { page: 'settings', label: 'Settings', access: 'general' },
 ];
 
-const ADMIN_PAGES: Page[] = ['add', 'maintenance'];
+const ACCESS: Record<Page, Access> = Object.fromEntries(NAV.map((n) => [n.page, n.access])) as Record<Page, Access>;
 
 export default function App() {
+  const [previewAs, setPreviewAs] = useStored<string>('demo:preview', '');
   const [session, setSession] = useState<Session | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
+  const run = useRef(0);
+  const previewRef = useRef(previewAs);
+
+  /** Opens the session again, e.g. after Settings changed who is in which unit. */
+  const reload = useCallback(async (options: { previewAs?: string; animate?: boolean } = {}) => {
+    const id = ++run.current;
+    const as = options.previewAs ?? previewRef.current;
+    const next = await openSession({ previewAs: as || undefined });
+    if (id !== run.current) return;
+    if (options.animate) transition(() => setSession(next));
+    else setSession(next);
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    openSession().then(
-      (s) => !cancelled && setSession(s),
-      (e: unknown) => !cancelled && setFatal(e instanceof Error ? e.message : String(e)),
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    reload().catch((e: unknown) => setFatal(e instanceof Error ? e.message : String(e)));
+  }, [reload]);
 
   if (fatal) {
     return (
@@ -59,27 +67,33 @@ export default function App() {
       </div>
     );
   }
-  return <Shell session={session} />;
+  return (
+    <Shell
+      session={session}
+      reload={() => reload()}
+      preview={(id) => {
+        previewRef.current = id;
+        setPreviewAs(id);
+        return reload({ previewAs: id, animate: true });
+      }}
+    />
+  );
 }
 
-function Shell({ session }: { session: Session }) {
-  const { user, params, mode } = session;
+interface ShellProps {
+  session: Session;
+  reload: () => Promise<void>;
+  preview: (memberId: string) => Promise<void>;
+}
 
-  // In demo mode, try both sides: an employee only belongs to the first unit;
-  // an admin manages every unit.
-  const [demoRole, setDemoRole] = useStored<'employee' | 'admin'>('demo:as', 'admin');
-  const units: UnitAccess[] =
-    mode === 'demo'
-      ? demoRole === 'admin'
-        ? session.units.map((u) => ({ ...u, admin: true }))
-        : session.units.slice(0, 1).map((u) => ({ ...u, admin: false }))
-      : session.units;
+function Shell({ session, reload, preview }: ShellProps) {
+  const { user, params, mode, units, generalAdmin } = session;
 
   const [storedUnit, setUnit] = useStored<string>('unit', '');
-  const paramUnit = units.find((u) => u.config.name.toLowerCase() === (params.unit ?? '').toLowerCase());
-  const [unitOverride, setUnitOverride] = useState(paramUnit?.config.name ?? null);
-  const current = units.find((u) => u.config.name === (unitOverride ?? storedUnit)) ?? units[0];
-  const unit = current?.config.name ?? '';
+  const paramUnit = units.find((u) => u.name.toLowerCase() === (params.unit ?? '').toLowerCase());
+  const [unitOverride, setUnitOverride] = useState(paramUnit?.name ?? null);
+  const current = units.find((u) => u.name === (unitOverride ?? storedUnit)) ?? units[0];
+  const unit = current?.name ?? '';
   const admin = current?.admin ?? false;
 
   const initialPage = PAGES.find((p) => p === params.page) ?? 'home';
@@ -95,11 +109,20 @@ function Shell({ session }: { session: Session }) {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  // Admin pages don't exist for anyone else: no navigation, no tiles, no links.
-  const visiblePage: Page = !admin && ADMIN_PAGES.includes(page) ? 'home' : page;
+  const notify = (text: string) => setToast({ id: Date.now(), text });
+  const { barRef, stacked } = useStackedBar();
+
+  // Pages someone can't use don't exist for them: no navigation, no tiles, no links.
+  const allowed = (p: Page) => {
+    const need = ACCESS[p];
+    if (need === 'general') return generalAdmin;
+    if (!current) return false;
+    return need === 'admin' ? admin : true;
+  };
+  const visiblePage: Page = allowed(page) ? page : current ? 'home' : 'settings';
 
   const go = (next: Page, options?: { kind?: MailKind }) => {
-    if (!admin && ADMIN_PAGES.includes(next)) return;
+    if (!allowed(next)) return;
     const kindChange = next === 'add' && options?.kind && options.kind !== addKind;
     if (next === visiblePage && !kindChange) return;
     transition(() => {
@@ -116,22 +139,52 @@ function Shell({ session }: { session: Session }) {
       setUnit(next);
     });
 
-  if (!current) return <NoAccess user={user} />;
-
-  const props: PageProps = {
-    session,
-    unit,
-    repo: current.repo,
-    admin,
-    addKind,
-    go,
-    notify: (text) => setToast({ id: Date.now(), text }),
+  const refresh = () => {
+    reload().catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
   };
+
+  const demoStrip =
+    mode === 'demo' ? (
+      <DemoStrip
+        session={session}
+        onPreview={(id) => {
+          setUnitOverride(null);
+          preview(id).catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
+        }}
+        onReset={() => {
+          resetDemo();
+          preview('')
+            .then(() => {
+              setResetKey((k) => k + 1);
+              notify('Demo data reset');
+            })
+            .catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
+        }}
+      />
+    ) : null;
+
+  if (!current && !generalAdmin) {
+    return (
+      <>
+        {demoStrip}
+        <NoAccess session={session} />
+      </>
+    );
+  }
+
+  const props: PageProps | null = current
+    ? { session, unit, repo: current.repo, admin, addKind, go, notify }
+    : null;
 
   return (
     <div className="app">
-      <header className="bar">
-        <button type="button" className="brand" aria-label={`${unit} ${APP_TITLE}, home`} onClick={() => go('home')}>
+      <header className={`bar ${stacked ? 'is-stacked' : ''}`} ref={barRef}>
+        <button
+          type="button"
+          className="brand"
+          aria-label={`${unit ? `${unit} ` : ''}${APP_TITLE}, home`}
+          onClick={() => go(current ? 'home' : 'settings')}
+        >
           <img className="brand-logo" src={wordmarkUrl} alt="Bank ABC" width={161} height={30} />
           <img className="brand-mark-img" src={markUrl} alt="Bank ABC" width={41} height={28} />
           <span className="brand-name">
@@ -140,11 +193,11 @@ function Shell({ session }: { session: Session }) {
         </button>
 
         <nav className="nav" aria-label="Pages">
-          {NAV.filter((n) => !n.admin || admin).map((n) => (
+          {NAV.filter((n) => allowed(n.page)).map((n) => (
             <button
               key={n.page}
               type="button"
-              className={`nav-item ${n.admin ? 'nav-desk' : ''}`}
+              className={`nav-item ${n.access !== 'unit' ? 'nav-desk' : ''}`}
               aria-current={visiblePage === n.page ? 'page' : undefined}
               onClick={() => go(n.page)}
             >
@@ -161,65 +214,31 @@ function Shell({ session }: { session: Session }) {
                 size="sm"
                 value={unit}
                 onChange={changeUnit}
-                options={units.map((u) => ({ value: u.config.name, label: u.config.name }))}
+                options={units.map((u) => ({ value: u.name, label: u.name }))}
               />
             ) : (
               <select className="unit-select" aria-label="Unit" value={unit} onChange={(e) => changeUnit(e.target.value)}>
                 {units.map((u) => (
-                  <option key={u.config.name}>{u.config.name}</option>
+                  <option key={u.name}>{u.name}</option>
                 ))}
               </select>
             ))}
-          {admin && <span className="role-badge">Admin</span>}
+          {(generalAdmin || admin) && <span className="role-badge">{generalAdmin ? 'General admin' : 'Admin'}</span>}
           <span className="avatar" title={`${user.name} (${user.email})`}>
             {initials(user.name)}
           </span>
         </div>
       </header>
 
-      {mode === 'demo' && (
-        <div className="demo-strip" role="note">
-          <p>
-            <strong>Demo data</strong>, saved in this browser only.{' '}
-            {demoRole === 'admin'
-              ? 'As an admin you manage every unit.'
-              : `As an employee you only see ${unit}, and no admin pages.`}
-          </p>
-          <Segmented
-            label="View as"
-            size="sm"
-            value={demoRole}
-            onChange={(r) =>
-              transition(() => {
-                setDemoRole(r);
-                setUnitOverride(null);
-              })
-            }
-            options={[
-              { value: 'employee', label: 'Employee' },
-              { value: 'admin', label: 'Admin' },
-            ]}
-          />
-          <button
-            type="button"
-            className="link-btn"
-            onClick={() => {
-              session.units.forEach((u) => u.repo instanceof DemoRepository && u.repo.reset());
-              setResetKey((k) => k + 1);
-              setToast({ id: Date.now(), text: 'Demo data reset' });
-            }}
-          >
-            Reset demo data
-          </button>
-        </div>
-      )}
+      {demoStrip}
 
       <main className="main" key={`${unit}-${resetKey}`}>
-        {visiblePage === 'home' && <Home {...props} />}
-        {visiblePage === 'mine' && <MyMail {...props} />}
-        {visiblePage === 'department' && <DepartmentMail {...props} />}
-        {visiblePage === 'add' && <LogMail key={`add-${visit}`} {...props} />}
-        {visiblePage === 'maintenance' && <Manage {...props} />}
+        {props && visiblePage === 'home' && <Home {...props} />}
+        {props && visiblePage === 'mine' && <MyMail {...props} />}
+        {props && visiblePage === 'department' && <DepartmentMail {...props} />}
+        {props && visiblePage === 'add' && <LogMail key={`add-${visit}`} {...props} />}
+        {props && visiblePage === 'maintenance' && <Manage {...props} />}
+        {visiblePage === 'settings' && generalAdmin && <Settings session={session} notify={notify} onChanged={refresh} />}
       </main>
 
       <div className="toast-region" aria-live="polite">
@@ -233,16 +252,123 @@ function Shell({ session }: { session: Session }) {
   );
 }
 
-/** Shown to people who can't open any unit's lists. */
-function NoAccess({ user }: { user: CurrentUser }) {
+/**
+ * Puts the page links on their own row when they don't fit beside the brand
+ * and the controls (more pages for admins, a unit switcher, a narrow window).
+ */
+function useStackedBar() {
+  const barRef = useRef<HTMLElement>(null);
+  const [stacked, setStacked] = useState(false);
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const measure = () => {
+      if (window.matchMedia('(max-width: 900px)').matches) return setStacked(false);
+      const parts = Array.from(bar.children) as HTMLElement[];
+      // The links' natural width, whichever row they're on.
+      const width = (el: HTMLElement) => {
+        if (!el.classList.contains('nav')) return el.getBoundingClientRect().width;
+        const items = el.children;
+        if (items.length === 0) return 0;
+        return items[items.length - 1].getBoundingClientRect().right - items[0].getBoundingClientRect().left;
+      };
+      const style = getComputedStyle(bar);
+      const gaps = 20 * Math.max(parts.length - 1, 0);
+      const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+      const needed = parts.reduce((sum, el) => sum + width(el), 0) + gaps + padding + 8;
+      setStacked(needed > bar.clientWidth);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar);
+    Array.from(bar.children).forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  });
+  return { barRef, stacked };
+}
+
+/** Demo mode: you're a general admin, and can see the app as anyone you've added in Settings. */
+function DemoStrip({
+  session,
+  onPreview,
+  onReset,
+}: {
+  session: Session;
+  onPreview: (memberId: string) => void;
+  onReset: () => void;
+}) {
+  const { data, previewing, canPreview } = session;
+  // One option per person, with every unit they're in.
+  const people = new Map<string, { id: string; name: string; units: string[] }>();
+  for (const m of data.members) {
+    const entry = people.get(m.email) ?? { id: m.id, name: m.name || m.email, units: [] };
+    entry.units.push(`${m.unit} ${m.role.toLowerCase()}`);
+    people.set(m.email, entry);
+  }
+  const selected = previewing ? (people.get(previewing.email)?.id ?? previewing.id) : '';
+
+  return (
+    <div className="demo-strip" role="note">
+      <p>
+        <strong>Demo data</strong>, saved in this browser only.{' '}
+        {!canPreview
+          ? ''
+          : previewing
+            ? `You’re seeing what ${previewing.name || previewing.email} sees.`
+            : people.size === 0
+              ? 'You’re a general admin. Add people in Settings to see the app as them.'
+              : 'You’re a general admin.'}
+      </p>
+      {canPreview && (
+        <label className="preview-pick">
+          <span>View as</span>
+          <select value={selected} onChange={(e) => onPreview(e.target.value)}>
+            <option value="">You (general admin)</option>
+            {[...people.values()].map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}: {p.units.join(', ')}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <button type="button" className="link-btn" onClick={onReset}>
+        Reset demo data
+      </button>
+    </div>
+  );
+}
+
+/** Shown to people who can't open any unit. */
+function NoAccess({ session }: { session: Session }) {
+  const { user, blocked } = session;
+  const locked = blocked.filter((b) => b.reason === 'no-permission').map((b) => b.name);
+  const waiting = blocked.filter((b) => b.reason === 'not-connected').map((b) => b.name);
+  const list = (names: string[]) => names.join(', ');
   return (
     <div className="boot no-access" role="alert">
       <img className="boot-mark" src={tileUrl} alt="" width={72} height={72} />
-      <h1>You don’t have access to a mail room yet</h1>
-      <p>
-        Ask your unit’s mail room admin to give <strong>{user.email}</strong> access to the unit’s mail lists, then open the app
-        again.
-      </p>
+      {locked.length > 0 ? (
+        <>
+          <h1>You can’t open the {list(locked)} mail room yet</h1>
+          <p>
+            You’re in {list(locked)}, but SharePoint doesn’t let <strong>{user.email}</strong> open the unit’s mail lists. Ask the
+            site owner to give you access, then open the app again.
+          </p>
+        </>
+      ) : waiting.length > 0 ? (
+        <>
+          <h1>The {list(waiting)} mail room isn’t set up yet</h1>
+          <p>You’re in {list(waiting)}. It will appear here as soon as its lists are added to the app.</p>
+        </>
+      ) : (
+        <>
+          <h1>You don’t have access to a mail room yet</h1>
+          <p>
+            Ask a general admin to add <strong>{user.email}</strong> to your unit in Mail Room Settings, then open the app again.
+          </p>
+        </>
+      )}
     </div>
   );
 }
