@@ -1,9 +1,8 @@
-import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { DEPARTMENTS, MAX_WAITING } from '../config';
-import { departmentOptions, EMAIL_PATTERN, isByHand } from '../data/rules';
-import type { MailKind, Person } from '../data/types';
+import { departmentOptions, EMAIL_PATTERN, isByHand, uniqueOptions } from '../data/rules';
+import { mailKey, type MailKind, type Person } from '../data/types';
 import { byHandRef, formatDateTime, isToday } from '../lib/format';
-import { useStored } from '../lib/stored';
 import { useAsync } from '../lib/useAsync';
 import { ScanIcon } from '../components/icons';
 import { CourierPicker } from '../components/CourierPicker';
@@ -18,29 +17,39 @@ type Errors = Partial<Record<Field, string>>;
 
 const compact = (s: string) => s.replace(/\s+/g, '').toLowerCase();
 
-export function LogMail({ session, unit, notify }: PageProps) {
+/** Add Personal Mail / Add Department Mail, with the same fields as the original forms. */
+export function LogMail({ session, unit, addKind, go, notify }: PageProps) {
   const { user, repo, directory } = session;
-  const [kind, setKind] = useStored<MailKind>('log:kind', 'Personal');
-  const [courier, setCourier] = useStored<string>('log:courier', '');
+  const [kind, setKind] = useState<MailKind>(addKind);
+  const [courier, setCourier] = useState('');
   const [courierNumber, setCourierNumber] = useState('');
   const [autoRef, setAutoRef] = useState<string | null>(null);
   const [sender, setSender] = useState('');
   const [recipient, setRecipient] = useState<Person | null>(null);
   const [department, setDepartment] = useState('');
-  const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<Errors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [fresh, setFresh] = useState<string[]>([]);
+  const [clock, setClock] = useState(() => byHandRef());
+  const [formKey, setFormKey] = useState(0);
   const numberRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
+  // The live time stamp shown on the form, as on the original site.
+  useEffect(() => {
+    const timer = setInterval(() => setClock(byHandRef()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const waiting = useAsync(() => repo.list({ unit, status: 'Waiting' }, MAX_WAITING), [repo, unit]);
   const recent = useAsync(() => repo.list({ unit }, 80), [repo, unit]);
-  const loggedToday = useMemo(() => (recent.data ?? []).filter((i) => isToday(i.created)), [recent.data]);
-  const departments = useMemo(
-    () => departmentOptions([...(waiting.data ?? []), ...(recent.data ?? [])], DEPARTMENTS),
-    [waiting.data, recent.data],
+  const addedToday = useMemo(() => (recent.data ?? []).filter((i) => isToday(i.created)), [recent.data]);
+  const known = useMemo(() => [...(waiting.data ?? []), ...(recent.data ?? [])], [waiting.data, recent.data]);
+  const departments = useMemo(() => departmentOptions(known, DEPARTMENTS), [known]);
+  const senderCompanies = useMemo(
+    () => uniqueOptions(known.filter((i) => i.kind === 'Department').map((i) => i.sender)),
+    [known],
   );
 
   const duplicate = useMemo(() => {
@@ -75,13 +84,28 @@ export function LogMail({ session, unit, notify }: PageProps) {
     target?.focus();
   }
 
+  function reset(keepCourier: boolean) {
+    setCourierNumber('');
+    setAutoRef(null);
+    setSender('');
+    setRecipient(null);
+    setDepartment('');
+    setErrors({});
+    setSubmitError(null);
+    if (!keepCourier) {
+      setCourier('');
+      setFormKey((k) => k + 1);
+    }
+    setTimeout(() => numberRef.current?.focus(), 0);
+  }
+
   function validate(): Errors {
     const e: Errors = {};
     if (!courierNumber.trim() && !isByHand(courier)) e.courierNumber = 'Scan or type the courier number.';
-    if (!courier.trim()) e.courier = 'Choose the courier.';
-    if (!sender.trim()) e.sender = kind === 'Personal' ? 'Enter who sent it.' : 'Enter the sender company.';
+    if (!courier.trim()) e.courier = 'Choose the courier company.';
+    if (!sender.trim()) e.sender = kind === 'Personal' ? 'Enter the sender.' : 'Enter the sender company.';
     if (kind === 'Personal') {
-      if (!recipient) e.recipient = 'Choose who it’s for.';
+      if (!recipient) e.recipient = 'Choose the recipient.';
       else if (!EMAIL_PATTERN.test(recipient.email)) e.recipient = 'The recipient needs a valid email.';
     } else if (!department.trim()) {
       e.department = 'Enter the department.';
@@ -101,7 +125,7 @@ export function LogMail({ session, unit, notify }: PageProps) {
       return;
     }
     setSaving(true);
-    // Hand deliveries get a fresh date-and-time reference at the moment they're logged.
+    // Hand deliveries get a fresh date-and-time reference at the moment they're submitted.
     const number = isByHand(courier) && (!courierNumber.trim() || courierNumber === autoRef) ? byHandRef() : courierNumber;
     try {
       const created = await repo.create(
@@ -111,26 +135,18 @@ export function LogMail({ session, unit, notify }: PageProps) {
           courierNumber: number,
           courierCompany: courier,
           sender,
-          recipientName: kind === 'Personal' ? recipient!.name : '',
+          recipient: kind === 'Personal' ? recipient!.name : '',
           recipientEmail: kind === 'Personal' ? recipient!.email : '',
           department: kind === 'Department' ? department : '',
-          notes,
         },
         user,
       );
-      setFresh((f) => [created.id, ...f]);
+      setFresh((f) => [mailKey(created), ...f]);
       const who = kind === 'Personal' ? recipient!.name : department;
-      notify(isByHand(courier) ? `Logged hand delivery for ${who}` : `Logged ${courier} ${created.courierNumber} for ${who}`);
-      setCourierNumber('');
-      setAutoRef(null);
-      setSender('');
-      setRecipient(null);
-      setDepartment('');
-      setNotes('');
-      setErrors({});
+      notify(`Added ${courier} ${created.courierNumber} for ${who}`);
+      reset(true);
       void recent.reload();
       void waiting.reload();
-      setTimeout(() => numberRef.current?.focus(), 0);
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -139,20 +155,28 @@ export function LogMail({ session, unit, notify }: PageProps) {
   }
 
   const describe = (f: Field) => (errors[f] ? `${f}-error` : undefined);
+  const title = kind === 'Personal' ? 'Add Personal Mail' : 'Add Department Mail';
 
   return (
     <div className="page">
-      <PageHead title="Log a delivery" text={`Register mail arriving at the ${unit} mail room.`}>
+      <PageHead
+        title={title}
+        text={
+          kind === 'Personal'
+            ? `Register new personal delivery at the ${unit} mail room and notify the recipient.`
+            : `Register new delivery at the ${unit} mail room and notify the department.`
+        }
+      >
         <Segmented
-          label="Delivery type"
+          label="Mail type"
           value={kind}
           onChange={(k) => {
             setKind(k);
             setErrors({});
           }}
           options={[
-            { value: 'Personal', label: 'Personal' },
-            { value: 'Department', label: 'Department' },
+            { value: 'Personal', label: 'Personal Mail' },
+            { value: 'Department', label: 'Department Mail' },
           ]}
         />
       </PageHead>
@@ -170,8 +194,14 @@ export function LogMail({ session, unit, notify }: PageProps) {
             }
           }}
         >
+          <p className="form-clock" aria-label="Current time stamp">
+            {clock}
+          </p>
+
           <label className="field">
-            <span className="field-label">Courier number</span>
+            <span className="field-label">
+              Courier Number <span className="req">*</span>
+            </span>
             <span className="scan-input">
               <ScanIcon />
               <input
@@ -192,7 +222,7 @@ export function LogMail({ session, unit, notify }: PageProps) {
                   // Barcode scanners press Enter after the number: move on instead of submitting.
                   if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
                     e.preventDefault();
-                    focusField(courier ? 'sender' : 'courier');
+                    focusField(courier ? (kind === 'Personal' ? 'sender' : 'department') : 'courier');
                   }
                 }}
               />
@@ -200,102 +230,132 @@ export function LogMail({ session, unit, notify }: PageProps) {
             {errors.courierNumber && <span id="courierNumber-error" className="field-error">{errors.courierNumber}</span>}
             {duplicate && !errors.courierNumber && (
               <span id="dup-note" className="field-warn">
-                Already logged on {formatDateTime(duplicate.created)} for{' '}
-                {duplicate.kind === 'Personal' ? duplicate.recipientName : duplicate.department}, still waiting. Check it isn’t a
+                Already added on {formatDateTime(duplicate.created)} for{' '}
+                {duplicate.kind === 'Personal' ? duplicate.recipient : duplicate.department} and not received yet. Check it isn’t a
                 second scan.
               </span>
             )}
           </label>
 
           <div>
-            <CourierPicker value={courier} onChange={chooseCourier} invalid={!!errors.courier} describedBy={describe('courier')} />
+            <CourierPicker
+              key={formKey}
+              label={
+                <>
+                  Courier Company <span className="req">*</span>
+                </>
+              }
+              value={courier}
+              onChange={chooseCourier}
+              invalid={!!errors.courier}
+              describedBy={describe('courier')}
+            />
             {errors.courier && <span id="courier-error" className="field-error">{errors.courier}</span>}
           </div>
 
-          <label className="field">
-            <span className="field-label">{kind === 'Personal' ? 'Sender' : 'Sender company'}</span>
-            <input
-              name="sender"
-              value={sender}
-              autoComplete="off"
-              placeholder={kind === 'Personal' ? 'Person or company it’s from' : 'Company it’s from'}
-              aria-invalid={!!errors.sender}
-              aria-describedby={describe('sender')}
-              onChange={(e) => setSender(e.target.value)}
-            />
-            {errors.sender && <span id="sender-error" className="field-error">{errors.sender}</span>}
-          </label>
-
           {kind === 'Personal' ? (
-            <div className="field">
-              <label className="field-label" htmlFor="recipient-input">
-                Recipient
+            <>
+              <label className="field">
+                <span className="field-label">
+                  Sender <span className="req">*</span>
+                </span>
+                <input
+                  name="sender"
+                  value={sender}
+                  autoComplete="off"
+                  aria-invalid={!!errors.sender}
+                  aria-describedby={describe('sender')}
+                  onChange={(e) => setSender(e.target.value)}
+                />
+                {errors.sender && <span id="sender-error" className="field-error">{errors.sender}</span>}
               </label>
-              <PeoplePicker
-                inputId="recipient-input"
-                directory={directory}
-                value={recipient}
-                onChange={setRecipient}
-                invalid={!!errors.recipient}
-                describedBy={describe('recipient')}
-              />
-              {errors.recipient && <span id="recipient-error" className="field-error">{errors.recipient}</span>}
-            </div>
+              <div className="field">
+                <label className="field-label" htmlFor="recipient-input">
+                  Recipient <span className="req">*</span>
+                </label>
+                <PeoplePicker
+                  inputId="recipient-input"
+                  directory={directory}
+                  value={recipient}
+                  onChange={setRecipient}
+                  invalid={!!errors.recipient}
+                  describedBy={describe('recipient')}
+                />
+                {errors.recipient && <span id="recipient-error" className="field-error">{errors.recipient}</span>}
+              </div>
+            </>
           ) : (
-            <label className="field">
-              <span className="field-label">Department</span>
-              <input
-                name="department"
-                list="department-options"
-                value={department}
-                autoComplete="off"
-                placeholder="Start typing to reuse an existing name"
-                aria-invalid={!!errors.department}
-                aria-describedby={describe('department')}
-                onChange={(e) => setDepartment(e.target.value)}
-              />
-              <datalist id="department-options">
-                {departments.map((d) => (
-                  <option key={d} value={d} />
-                ))}
-              </datalist>
-              {errors.department && <span id="department-error" className="field-error">{errors.department}</span>}
-            </label>
+            <>
+              <label className="field">
+                <span className="field-label">
+                  Department <span className="req">*</span>
+                </span>
+                <input
+                  name="department"
+                  list="department-options"
+                  value={department}
+                  autoComplete="off"
+                  placeholder="Start typing to reuse an existing name"
+                  aria-invalid={!!errors.department}
+                  aria-describedby={describe('department')}
+                  onChange={(e) => setDepartment(e.target.value)}
+                />
+                <datalist id="department-options">
+                  {departments.map((d) => (
+                    <option key={d} value={d} />
+                  ))}
+                </datalist>
+                {errors.department && <span id="department-error" className="field-error">{errors.department}</span>}
+              </label>
+              <label className="field">
+                <span className="field-label">
+                  Sender Company <span className="req">*</span>
+                </span>
+                <input
+                  name="sender"
+                  list="sender-options"
+                  value={sender}
+                  autoComplete="off"
+                  aria-invalid={!!errors.sender}
+                  aria-describedby={describe('sender')}
+                  onChange={(e) => setSender(e.target.value)}
+                />
+                <datalist id="sender-options">
+                  {senderCompanies.map((d) => (
+                    <option key={d} value={d} />
+                  ))}
+                </datalist>
+                {errors.sender && <span id="sender-error" className="field-error">{errors.sender}</span>}
+              </label>
+            </>
           )}
-
-          <label className="field">
-            <span className="field-label">
-              Notes <em>optional</em>
-            </span>
-            <input
-              name="notes"
-              value={notes}
-              autoComplete="off"
-              placeholder="Size, shelf, anything the recipient should know"
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </label>
 
           {submitError && <p className="error-box" role="alert">{submitError}</p>}
 
           <div className="form-foot">
             <button type="submit" className="btn btn-primary btn-lg" disabled={saving}>
-              {saving ? 'Logging…' : 'Log delivery'}
+              {saving ? 'Submitting…' : 'Submit'}
             </button>
-            <span className="kbd-hint">Ctrl + Enter</span>
+            <button type="button" className="btn btn-ghost btn-lg" disabled={saving} onClick={() => reset(false)}>
+              Reset
+            </button>
+            <button type="button" className="btn btn-ghost btn-lg" disabled={saving} onClick={() => go('home')}>
+              Cancel
+            </button>
+            <span className="kbd-hint">Ctrl + Enter submits</span>
           </div>
         </form>
 
         <section className="logged-today" aria-labelledby="today-title">
           <h2 id="today-title" className="section-title">
-            Logged today <span className="count">{loggedToday.length}</span>
+            Added today <span className="count">{addedToday.length}</span>
           </h2>
-          {loggedToday.length === 0 ? (
-            <p className="muted">{recent.loading ? 'Loading…' : 'Deliveries you log appear here.'}</p>
+          {addedToday.length === 0 ? (
+            <p className="muted">{recent.loading ? 'Loading…' : 'Deliveries you add appear here.'}</p>
           ) : (
             <ul className="slips slips-compact">
-              {loggedToday.slice(0, 30).map((item, i) => (
-                <Slip key={item.id} item={item} index={i} showFor fresh={fresh.includes(item.id)} compact />
+              {addedToday.slice(0, 30).map((item, i) => (
+                <Slip key={mailKey(item)} item={item} index={i} showFor fresh={fresh.includes(mailKey(item))} compact />
               ))}
             </ul>
           )}

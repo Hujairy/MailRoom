@@ -4,9 +4,9 @@ import { formatDateTime, formatDayMonth, formatTime } from '../lib/format';
 /** A postal cancellation mark: wavy lines and a dated ring with the unit's name. */
 export function Postmark({ unit, date }: { unit: string; date: string | null }) {
   const ringId = useId();
-  const ring = `${unit} mail room  ·  collected  ·  `.toUpperCase();
+  const ring = `${unit} mail room  ·  received  ·  `.toUpperCase();
   return (
-    <div className="postmark" role="img" aria-label={`Collected ${formatDateTime(date)}`}>
+    <div className="postmark" role="img" aria-label={`Received ${formatDateTime(date)}`}>
       <svg viewBox="0 0 176 104" aria-hidden="true">
         <defs>
           <path id={ringId} d="M 124 52 m -38 0 a 38 38 0 1 1 76 0 a 38 38 0 1 1 -76 0" />
@@ -19,8 +19,8 @@ export function Postmark({ unit, date }: { unit: string; date: string | null }) 
           <circle cx="124" cy="52" r="29" strokeWidth="1.4" />
         </g>
         <text className="pm-ring" fill="currentColor">
-          <textPath href={`#${ringId}`} startOffset="0">
-            {ring + ring}
+          <textPath href={`#${ringId}`} startOffset="0" textLength={233} lengthAdjust="spacing">
+            {ring}
           </textPath>
         </text>
         <text className="pm-day" x="124" y="53" textAnchor="middle" fill="currentColor">

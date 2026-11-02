@@ -1,5 +1,5 @@
 import { getContext } from '@microsoft/power-apps/app';
-import { PEOPLE_SERVICE_NAME, SHAREPOINT_SERVICE_NAME } from '../config';
+import { DEPARTMENT_MAIL_LIST, PEOPLE_SERVICE_NAME, PERSONAL_MAIL_LIST } from '../config';
 import { DemoDirectory, DemoRepository } from './demo';
 import { generatedServiceNames, isTabularService, loadGeneratedService } from './generated';
 import { NoDirectory, Office365Directory } from './people';
@@ -17,29 +17,39 @@ export interface Session {
 const DEMO_USER: CurrentUser = { name: 'Demo User', email: 'demo.user@contoso.com', fromPowerApps: false };
 
 /**
- * Opens the data store. Uses SharePoint when the generated list service
- * exists, otherwise demo data. Force a mode with VITE_DATA_MODE=demo|sharepoint
- * in a `.env.local` file.
+ * Opens the data store. Uses SharePoint when both generated list services
+ * exist (Personal Mail and Department Mail), otherwise demo data. Force a
+ * mode with VITE_DATA_MODE=demo|sharepoint in a `.env.local` file.
  */
 export async function openSession(): Promise<Session> {
   const { user, params } = await readContext();
   const setting = import.meta.env.VITE_DATA_MODE ?? 'auto';
 
-  const service = setting === 'demo' ? null : await loadGeneratedService(SHAREPOINT_SERVICE_NAME);
-  if (!isTabularService(service)) {
-    if (setting === 'sharepoint') {
+  const [personal, department] =
+    setting === 'demo'
+      ? [null, null]
+      : await Promise.all([
+          loadGeneratedService(PERSONAL_MAIL_LIST.service),
+          loadGeneratedService(DEPARTMENT_MAIL_LIST.service),
+        ]);
+  if (!isTabularService(personal) || !isTabularService(department)) {
+    const missing = [
+      !isTabularService(personal) && PERSONAL_MAIL_LIST.service,
+      !isTabularService(department) && DEPARTMENT_MAIL_LIST.service,
+    ].filter(Boolean);
+    if (setting === 'sharepoint' || (personal || department)) {
       const found = generatedServiceNames();
       throw new Error(
-        `The app is set to use SharePoint, but ${SHAREPOINT_SERVICE_NAME} isn't generated yet. ` +
+        `The app can't find ${missing.join(' and ')}. ` +
           (found.length ? `Generated services found: ${found.join(', ')}. ` : 'No generated services were found. ') +
-          'Run "pa app add data-source" for your list (see README), or update SHAREPOINT_SERVICE_NAME in src/config.ts.',
+          'Add both lists with "pa app add data-source" (see README), or update the service names in src/config.ts.',
       );
     }
     return { user, params, repo: new DemoRepository(user), directory: new DemoDirectory(user) };
   }
 
   const directory = (await Office365Directory.open(PEOPLE_SERVICE_NAME)) ?? new NoDirectory();
-  return { user, params, repo: new SharePointRepository(service), directory };
+  return { user, params, repo: new SharePointRepository(personal, department), directory };
 }
 
 async function readContext(): Promise<{ user: CurrentUser; params: Record<string, string> }> {

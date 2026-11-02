@@ -6,21 +6,24 @@ import { isStaff } from './data/rules';
 import { initials } from './lib/format';
 import { transition } from './lib/motion';
 import { useStored } from './lib/stored';
-import { EnvelopeIcon } from './components/icons';
+import markUrl from './assets/bankabc-mark.png';
+import tileUrl from './assets/bankabc-tile.png';
+import wordmarkUrl from './assets/bankabc-wordmark.png';
 import { Segmented } from './components/Segmented';
 import { DepartmentMail } from './pages/DepartmentMail';
 import { Home } from './pages/Home';
 import { LogMail } from './pages/LogMail';
 import { Manage } from './pages/Manage';
 import { MyMail } from './pages/MyMail';
+import type { MailKind } from './data/types';
 import { PAGES, type Page, type PageProps } from './pages/shared';
 
 const NAV: { page: Page; label: string; staff?: boolean }[] = [
   { page: 'home', label: 'Home' },
-  { page: 'mine', label: 'My mail' },
-  { page: 'department', label: 'Department mail' },
-  { page: 'log', label: 'Log delivery', staff: true },
-  { page: 'manage', label: 'Manage', staff: true },
+  { page: 'mine', label: 'My Personal Mail' },
+  { page: 'department', label: 'Department Mail' },
+  { page: 'add', label: 'Add Mail', staff: true },
+  { page: 'maintenance', label: 'Maintenance', staff: true },
 ];
 
 export default function App() {
@@ -49,9 +52,7 @@ export default function App() {
   if (!session) {
     return (
       <div className="boot" aria-live="polite">
-        <span className="boot-mark">
-          <EnvelopeIcon width={28} height={28} />
-        </span>
+        <img className="boot-mark" src={tileUrl} alt="" width={72} height={72} />
         <p>Opening {APP_TITLE}…</p>
       </div>
     );
@@ -71,6 +72,8 @@ function Shell({ session }: { session: Session }) {
 
   const initialPage = PAGES.find((p) => p === params.page) ?? 'home';
   const [page, setPage] = useState<Page>(initialPage);
+  const [addKind, setAddKind] = useState<MailKind>(params.kind?.toLowerCase() === 'department' ? 'Department' : 'Personal');
+  const [visit, setVisit] = useState(0);
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
   const [resetKey, setResetKey] = useState(0);
 
@@ -80,12 +83,15 @@ function Shell({ session }: { session: Session }) {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  const visiblePage: Page = !staff && (page === 'log' || page === 'manage') ? 'home' : page;
+  const visiblePage: Page = !staff && (page === 'add' || page === 'maintenance') ? 'home' : page;
 
-  const go = (next: Page) => {
-    if (next === visiblePage) return;
+  const go = (next: Page, options?: { kind?: MailKind }) => {
+    const kindChange = next === 'add' && options?.kind && options.kind !== addKind;
+    if (next === visiblePage && !kindChange) return;
     transition(() => {
+      if (options?.kind) setAddKind(options.kind);
       setPage(next);
+      setVisit((v) => v + 1);
       window.scrollTo({ top: 0 });
     });
   };
@@ -100,6 +106,7 @@ function Shell({ session }: { session: Session }) {
     session,
     unit,
     staff,
+    addKind,
     go,
     notify: (text) => setToast({ id: Date.now(), text }),
   };
@@ -107,11 +114,12 @@ function Shell({ session }: { session: Session }) {
   return (
     <div className="app">
       <header className="bar">
-        <button type="button" className="brand" onClick={() => go('home')}>
-          <span className="brand-mark">
-            <EnvelopeIcon width={20} height={20} />
+        <button type="button" className="brand" aria-label={`${unit} ${APP_TITLE}, home`} onClick={() => go('home')}>
+          <img className="brand-logo" src={wordmarkUrl} alt="Bank ABC" width={161} height={30} />
+          <img className="brand-mark-img" src={markUrl} alt="Bank ABC" width={41} height={28} />
+          <span className="brand-name">
+            {unit} {APP_TITLE}
           </span>
-          <span className="brand-name">{APP_TITLE}</span>
         </button>
 
         <nav className="nav" aria-label="Pages">
@@ -184,8 +192,8 @@ function Shell({ session }: { session: Session }) {
         {visiblePage === 'home' && <Home {...props} />}
         {visiblePage === 'mine' && <MyMail {...props} />}
         {visiblePage === 'department' && <DepartmentMail {...props} />}
-        {visiblePage === 'log' && <LogMail {...props} />}
-        {visiblePage === 'manage' && <Manage {...props} />}
+        {visiblePage === 'add' && <LogMail key={`add-${visit}`} {...props} />}
+        {visiblePage === 'maintenance' && <Manage {...props} />}
       </main>
 
       <div className="toast-region" aria-live="polite">

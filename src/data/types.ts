@@ -1,28 +1,35 @@
 export type MailKind = 'Personal' | 'Department';
-export type MailStatus = 'Waiting' | 'Collected';
+/** "Received: No" is Waiting; "Received: Yes" is Received. */
+export type MailStatus = 'Waiting' | 'Received';
 export type DataMode = 'demo' | 'sharepoint';
 
+/**
+ * One delivery from the Personal Mail or Department Mail list. IDs are only
+ * unique within a list, so use `mailKey()` when you need a unique key.
+ */
 export interface MailItem {
   id: string;
   kind: MailKind;
   unit: string;
   courierNumber: string;
   courierCompany: string;
-  /** Sender's name (personal) or sender company (department). */
+  /** Sender (personal mail) or Sender Company (department mail). */
   sender: string;
-  recipientName: string;
-  /** Lower-cased. Empty for department mail. */
+  /** Personal mail: the recipient's name and email. */
+  recipient: string;
   recipientEmail: string;
+  /** Personal mail: who the recipient's mail was received for, when someone else collected it. */
+  onBehalf: string;
+  /** Department mail. */
   department: string;
   status: MailStatus;
-  collectedByName: string;
-  collectedByEmail: string;
-  /** ISO timestamp, or null while waiting. */
-  collectedOn: string | null;
-  loggedByName: string;
-  loggedByEmail: string;
-  notes: string;
-  /** ISO timestamp the delivery was logged. */
+  receivedBy: string;
+  receivedByEmail: string;
+  /** ISO timestamp, or null when not received. */
+  receivedTimeStamp: string | null;
+  /** "Created By" — who logged the delivery. */
+  createdBy: string;
+  /** "Creation Time Stamp" — ISO timestamp the delivery was logged. */
   created: string;
   modified: string;
 }
@@ -46,21 +53,18 @@ export interface NewMailInput {
   courierNumber: string;
   courierCompany: string;
   sender: string;
-  recipientName: string;
+  recipient: string;
   recipientEmail: string;
   department: string;
-  notes: string;
 }
 
 export type MailChanges = Partial<
-  Pick<
-    MailItem,
-    'courierNumber' | 'courierCompany' | 'sender' | 'recipientName' | 'recipientEmail' | 'department' | 'notes'
-  >
+  Pick<MailItem, 'courierNumber' | 'courierCompany' | 'sender' | 'recipient' | 'recipientEmail' | 'onBehalf' | 'department'>
 >;
 
 export interface MailQuery {
   unit: string;
+  /** Omit to read both lists. */
   kind?: MailKind;
   status?: MailStatus;
   recipientEmail?: string;
@@ -71,11 +75,11 @@ export interface MailRepository {
   /** Newest first. */
   list(query: MailQuery, top: number): Promise<MailItem[]>;
   create(input: NewMailInput, user: CurrentUser): Promise<MailItem>;
-  update(id: string, changes: MailChanges): Promise<MailItem>;
-  /** Marks a waiting delivery as collected. Fails if someone already collected it. */
-  collect(id: string, collector: Person): Promise<MailItem>;
-  /** Puts a collected delivery back to waiting. */
-  reopen(id: string): Promise<MailItem>;
+  update(item: MailItem, changes: MailChanges): Promise<MailItem>;
+  /** Marks a delivery as received. Fails if it was already received. */
+  receive(item: MailItem, receivedBy: Person): Promise<MailItem>;
+  /** Puts a received delivery back to not received. */
+  reopen(item: MailItem): Promise<MailItem>;
 }
 
 export interface Directory {
@@ -85,3 +89,5 @@ export interface Directory {
   /** The signed-in person's department, when the directory knows it. */
   myDepartment(): Promise<string | null>;
 }
+
+export const mailKey = (item: Pick<MailItem, 'kind' | 'id'>) => `${item.kind}-${item.id}`;

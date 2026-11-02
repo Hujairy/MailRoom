@@ -25,6 +25,16 @@ export function PeoplePicker({ directory, value, onChange, invalid, describedBy,
   const [active, setActive] = useState(0);
   const [searching, setSearching] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const chosenRef = useRef<HTMLButtonElement>(null);
+  const justChose = useRef(false);
+
+  // Keep focus inside the form after choosing, so Tab and Ctrl+Enter keep working.
+  useEffect(() => {
+    if (value && justChose.current) {
+      justChose.current = false;
+      chosenRef.current?.focus();
+    }
+  }, [value]);
 
   useEffect(() => {
     if (!directory.searchable || query.trim().length < 2) {
@@ -59,6 +69,7 @@ export function PeoplePicker({ directory, value, onChange, invalid, describedBy,
   }
 
   function choose(person: Person) {
+    justChose.current = true;
     onChange(person);
     setQuery('');
     setOpen(false);
@@ -76,6 +87,7 @@ export function PeoplePicker({ directory, value, onChange, invalid, describedBy,
           </span>
         </span>
         <button
+          ref={chosenRef}
           type="button"
           className="icon-btn"
           aria-label={`Remove ${value.name}`}

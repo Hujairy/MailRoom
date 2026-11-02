@@ -1,52 +1,34 @@
 import { useMemo } from 'react';
-import { MAX_COLLECTED } from '../config';
+import { MAX_RECEIVED } from '../config';
+import { mailKey } from '../data/types';
 import { useStored } from '../lib/stored';
 import { useAsync } from '../lib/useAsync';
 import { EnvelopeIcon } from '../components/icons';
-import { Segmented } from '../components/Segmented';
-import { Slip } from '../components/Slip';
 import { PageHead } from '../components/PageHead';
+import { ReceivedFilter, type Show } from '../components/ReceivedFilter';
+import { Slip } from '../components/Slip';
 import type { PageProps } from './shared';
-
-type Show = 'Waiting' | 'Collected' | 'All';
 
 export function MyMail({ session, unit, notify }: PageProps) {
   const { user, repo } = session;
-  const [show, setShow] = useStored<Show>('mine:show', 'Waiting');
+  const [show, setShow] = useStored<Show>('mine:received', 'Waiting');
   const items = useAsync(
-    () => repo.list({ unit, kind: 'Personal', recipientEmail: user.email }, MAX_COLLECTED),
+    () => repo.list({ unit, kind: 'Personal', recipientEmail: user.email }, MAX_RECEIVED),
     [repo, unit, user.email],
   );
 
   const all = useMemo(() => items.data ?? [], [items.data]);
-  const counts = useMemo(
-    () => ({
-      Waiting: all.filter((i) => i.status === 'Waiting').length,
-      Collected: all.filter((i) => i.status === 'Collected').length,
-      All: all.length,
-    }),
-    [all],
-  );
   const visible = show === 'All' ? all : all.filter((i) => i.status === show);
 
   return (
     <div className="page">
       <PageHead
-        title="My mail"
-        text={`Deliveries addressed to you at the ${unit} mail room.`}
+        title="My Personal Mail"
+        text={`Find your personal delivery at the ${unit} mail room.`}
         loading={items.loading}
         onRefresh={() => void items.reload()}
       >
-        <Segmented
-          label="Show"
-          value={show}
-          onChange={setShow}
-          options={[
-            { value: 'Waiting', label: 'Waiting', count: counts.Waiting },
-            { value: 'Collected', label: 'Collected', count: counts.Collected },
-            { value: 'All', label: 'All', count: counts.All },
-          ]}
-        />
+        <ReceivedFilter value={show} onChange={setShow} items={all} />
       </PageHead>
 
       {items.error && <p className="error-box" role="alert">{items.error}</p>}
@@ -58,7 +40,7 @@ export function MyMail({ session, unit, notify }: PageProps) {
           <EnvelopeIcon width={30} height={30} />
           <p>
             {show === 'Waiting'
-              ? 'Nothing is waiting for you. New deliveries appear here as soon as the mail room logs them.'
+              ? 'You have no personal mail waiting. New deliveries appear here as soon as the mail room adds them.'
               : 'No deliveries to show yet.'}
           </p>
         </div>
@@ -66,13 +48,13 @@ export function MyMail({ session, unit, notify }: PageProps) {
         <ul className="slips" key={show}>
           {visible.map((item, i) => (
             <Slip
-              key={item.id}
+              key={mailKey(item)}
               item={item}
               index={i}
               leaveOnConfirm={show === 'Waiting'}
-              onConfirm={item.status === 'Waiting' ? async () => void (await repo.collect(item.id, user)) : undefined}
+              onConfirm={item.status === 'Waiting' ? async () => void (await repo.receive(item, user)) : undefined}
               onSettled={() => {
-                notify(`Collected ${item.courierCompany} ${item.courierNumber}`);
+                notify(`Marked ${item.courierCompany} ${item.courierNumber} as received`);
                 void items.reload();
               }}
             />

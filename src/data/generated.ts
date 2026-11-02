@@ -35,12 +35,23 @@ export function generatedServiceNames(): string[] {
   return Object.keys(modules).map((p) => p.split('/').pop()!.replace(/\.ts$/, ''));
 }
 
-/** Loads a generated service class by name, or null when it doesn't exist. */
+/** "Personal Mail", "Personal%20Mail", "Personal_x0020_MailService" and "PersonalMailService" all become "personalmail". */
+function loose(name: string): string {
+  return name
+    .replace(/_x0020_|%20/gi, '')
+    .replace(/[^a-z0-9]/gi, '')
+    .toLowerCase()
+    .replace(/service$/, '');
+}
+
+/** Loads a generated service class by (loosely matched) name, or null when it doesn't exist. */
 export async function loadGeneratedService(name: string): Promise<Record<string, unknown> | null> {
-  const path = Object.keys(modules).find((p) => p.endsWith(`/${name}.ts`));
+  const wanted = loose(name);
+  const path = Object.keys(modules).find((p) => loose(p.split('/').pop()!.replace(/\.ts$/, '')) === wanted);
   if (!path) return null;
   const module = await modules[path]();
-  const service = module[name];
+  const key = Object.keys(module).find((k) => loose(k) === wanted) ?? Object.keys(module).find((k) => /Service$/.test(k));
+  const service = key ? module[key] : undefined;
   return service && (typeof service === 'function' || typeof service === 'object')
     ? (service as Record<string, unknown>)
     : null;

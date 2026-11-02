@@ -61,3 +61,11 @@ export const UndoIcon = (p: P) => (
 export const PencilIcon = (p: P) => (
   <svg {...base} {...p}><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="m13.5 6.5 4 4" /></svg>
 );
+
+export const GearIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="3" />
+    <path d="M12 2.8v2.4M12 18.8v2.4M21.2 12h-2.4M5.2 12H2.8M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7M18.5 18.5l-1.7-1.7M7.2 7.2 5.5 5.5" />
+    <circle cx="12" cy="12" r="6.2" />
+  </svg>
+);

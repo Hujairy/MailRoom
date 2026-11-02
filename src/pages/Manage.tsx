@@ -1,96 +1,110 @@
 import { useMemo, useState } from 'react';
-import { COURIERS } from '../config';
-import { loadUnit } from '../data/rules';
-import type { MailItem, MailKind } from '../data/types';
-import { formatDateTime, localDay, timeAgo } from '../lib/format';
+import { COURIERS, DEPARTMENTS } from '../config';
+import { departmentKey, departmentOptions, loadUnit, uniqueOptions } from '../data/rules';
+import { mailKey, type MailItem, type MailKind } from '../data/types';
+import { formatDateTime, localDay } from '../lib/format';
 import { useStored } from '../lib/stored';
 import { useAsync } from '../lib/useAsync';
-import { ListIcon, SearchIcon } from '../components/icons';
+import { ListIcon, PencilIcon } from '../components/icons';
 import { EditDrawer } from '../components/EditDrawer';
 import { PageHead } from '../components/PageHead';
+import { ReceivedFilter, type Show } from '../components/ReceivedFilter';
 import { Segmented } from '../components/Segmented';
 import type { PageProps } from './shared';
 
-type Show = 'Waiting' | 'Collected' | 'All';
-type KindFilter = 'All' | MailKind;
+const same = (a: string, b: string) => departmentKey(a) === departmentKey(b);
 
+/** Maintenance: the original list columns, with an edit button per delivery. */
 export function Manage({ session, unit, notify }: PageProps) {
   const { repo } = session;
-  const [show, setShow] = useStored<Show>('manage:show', 'Waiting');
-  const [kind, setKind] = useStored<KindFilter>('manage:kind', 'All');
-  const [query, setQuery] = useState('');
+  const [kind, setKind] = useStored<MailKind>('maintenance:kind', 'Department');
+  const [show, setShow] = useStored<Show>('maintenance:received', 'Waiting');
+  const [number, setNumber] = useState('');
+  const [forWhom, setForWhom] = useState('');
   const [courier, setCourier] = useState('');
+  const [sender, setSender] = useState('');
   const [day, setDay] = useState('');
   const [editing, setEditing] = useState<MailItem | null>(null);
 
-  const items = useAsync(() => loadUnit(repo, unit), [repo, unit]);
+  const items = useAsync(() => loadUnit(repo, unit, kind), [repo, unit, kind]);
   const all = useMemo(() => items.data ?? [], [items.data]);
-  const couriers = useMemo(
-    () => [...new Set([...COURIERS, ...all.map((i) => i.courierCompany.trim()).filter(Boolean)])],
-    [all],
+  const forOptions = useMemo(
+    () => (kind === 'Department' ? departmentOptions(all, DEPARTMENTS) : uniqueOptions(all.map((i) => i.recipient))),
+    [all, kind],
   );
+  const couriers = useMemo(() => uniqueOptions(all.map((i) => i.courierCompany), COURIERS), [all]);
+  const senders = useMemo(() => uniqueOptions(all.map((i) => i.sender)), [all]);
 
-  const q = query.trim().toLowerCase();
+  const q = number.trim().toLowerCase().replace(/\s+/g, '');
+  const forValue = (i: MailItem) => (kind === 'Department' ? i.department : i.recipient);
   const visible = all.filter(
     (i) =>
       (show === 'All' || i.status === show) &&
-      (kind === 'All' || i.kind === kind) &&
-      (!courier || i.courierCompany.trim().toLowerCase() === courier.toLowerCase()) &&
+      (!forWhom || same(forValue(i), forWhom)) &&
+      (!courier || same(i.courierCompany, courier)) &&
+      (!sender || same(i.sender, sender)) &&
       (!day || localDay(i.created) === day) &&
-      (!q ||
-        [i.courierNumber, i.sender, i.recipientName, i.recipientEmail, i.department, i.collectedByName, i.id].some((f) =>
-          f.toLowerCase().includes(q),
-        )),
+      (!q || i.courierNumber.toLowerCase().replace(/\s+/g, '').includes(q) || i.id === number.trim()),
   );
-  const filtered = !!(q || courier || day);
+  const filtered = !!(q || forWhom || courier || sender || day);
+
+  function clear() {
+    setNumber('');
+    setForWhom('');
+    setCourier('');
+    setSender('');
+    setDay('');
+  }
+
+  const forLabel = kind === 'Department' ? 'Department' : 'Recipient';
+  const senderLabel = kind === 'Department' ? 'Sender Company' : 'Sender';
 
   return (
-    <div className="page">
+    <div className="page page-wide">
       <PageHead
-        title="Manage deliveries"
-        text={`Edit details and record collections for the ${unit} mail room.`}
+        title="Maintenance"
+        text={`Edit details related to delivery at the ${unit} mail room.`}
         loading={items.loading}
         onRefresh={() => void items.reload()}
-      />
-
-      <div className="toolbar">
+      >
         <Segmented
-          label="Type"
+          label="List"
           value={kind}
-          onChange={setKind}
+          onChange={(k) => {
+            setKind(k);
+            clear();
+          }}
           options={[
-            { value: 'All', label: 'All types' },
-            { value: 'Personal', label: 'Personal' },
-            { value: 'Department', label: 'Department' },
+            { value: 'Personal', label: 'Personal Mail' },
+            { value: 'Department', label: 'Department Mail' },
           ]}
         />
-        <Segmented
-          label="Status"
-          value={show}
-          onChange={setShow}
-          options={[
-            { value: 'Waiting', label: 'Waiting' },
-            { value: 'Collected', label: 'Collected' },
-            { value: 'All', label: 'All' },
-          ]}
-        />
-      </div>
+      </PageHead>
 
-      <div className="filters">
-        <label className="search">
-          <SearchIcon />
-          <span className="sr-only">Search deliveries</span>
-          <input
-            type="search"
-            value={query}
-            placeholder="Courier number, person, department or sender"
-            onChange={(e) => setQuery(e.target.value)}
-          />
+      <div className="filter-grid panel" role="search" aria-label="Filter deliveries">
+        <label className="field">
+          <span className="field-label">Courier Number</span>
+          <input type="search" value={number} placeholder="Any" onChange={(e) => setNumber(e.target.value)} />
         </label>
-        <label className="field-inline">
-          <span className="sr-only">Courier</span>
+        <label className="field">
+          <span className="field-label">{forLabel}</span>
+          <select value={forWhom} onChange={(e) => setForWhom(e.target.value)}>
+            <option value="">Any</option>
+            {forOptions.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span className="field-label">Date</span>
+          <input type="date" value={day} onChange={(e) => setDay(e.target.value)} />
+        </label>
+        <label className="field">
+          <span className="field-label">Courier Company</span>
           <select value={courier} onChange={(e) => setCourier(e.target.value)}>
-            <option value="">Any courier</option>
+            <option value="">Any</option>
             {couriers.map((c) => (
               <option key={c} value={c}>
                 {c}
@@ -98,20 +112,23 @@ export function Manage({ session, unit, notify }: PageProps) {
             ))}
           </select>
         </label>
-        <label className="field-inline">
-          <span className="sr-only">Logged on</span>
-          <input type="date" value={day} onChange={(e) => setDay(e.target.value)} />
+        <label className="field">
+          <span className="field-label">{senderLabel}</span>
+          <select value={sender} onChange={(e) => setSender(e.target.value)}>
+            <option value="">Any</option>
+            {senders.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
         </label>
+        <div className="field">
+          <span className="field-label">Received</span>
+          <ReceivedFilter value={show} onChange={setShow} items={all} />
+        </div>
         {filtered && (
-          <button
-            type="button"
-            className="link-btn"
-            onClick={() => {
-              setQuery('');
-              setCourier('');
-              setDay('');
-            }}
-          >
+          <button type="button" className="link-btn filter-clear" onClick={clear}>
             Clear filters
           </button>
         )}
@@ -128,50 +145,89 @@ export function Manage({ session, unit, notify }: PageProps) {
         </div>
       ) : (
         <div className="table-wrap">
-          <table className="table">
-            <caption className="sr-only">Deliveries</caption>
-            <thead>
-              <tr>
-                <th scope="col">Courier number</th>
-                <th scope="col">Courier</th>
-                <th scope="col">For</th>
-                <th scope="col">Sender</th>
-                <th scope="col">Logged</th>
-                <th scope="col">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.slice(0, 300).map((i) => (
-                <tr key={i.id} data-status={i.status.toLowerCase()} onClick={() => setEditing(i)}>
-                  <td data-label="Courier number">
-                    <button
-                      type="button"
-                      className="row-link"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditing(i);
-                      }}
-                    >
-                      {i.courierNumber}
-                    </button>
-                  </td>
-                  <td data-label="Courier">{i.courierCompany}</td>
-                  <td data-label="For">
-                    <span className="kind-tag">{i.kind === 'Personal' ? 'Personal' : 'Dept.'}</span>{' '}
-                    {i.kind === 'Personal' ? i.recipientName || i.recipientEmail : i.department}
-                  </td>
-                  <td data-label="Sender">{i.sender}</td>
-                  <td data-label="Logged" title={formatDateTime(i.created)}>
-                    {timeAgo(i.created)}
-                  </td>
-                  <td data-label="Status">
-                    <span className="status-dot" />
-                    {i.status === 'Waiting' ? 'Waiting' : `Collected by ${i.collectedByName || '—'}`}
-                  </td>
+          <div className="table-scroll">
+            <table className="table">
+              <caption className="sr-only">{kind === 'Department' ? 'Department Mail' : 'Personal Mail'}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">ID</th>
+                  <th scope="col">Courier Number</th>
+                  <th scope="col">Courier Company</th>
+                  {kind === 'Department' ? (
+                    <>
+                      <th scope="col">Department</th>
+                      <th scope="col">Sender Company</th>
+                    </>
+                  ) : (
+                    <>
+                      <th scope="col">Sender</th>
+                      <th scope="col">Recipient</th>
+                      <th scope="col">On Behalf</th>
+                    </>
+                  )}
+                  <th scope="col">Creation Time Stamp</th>
+                  <th scope="col">Created By</th>
+                  <th scope="col">Received</th>
+                  <th scope="col">Received By</th>
+                  <th scope="col">Received Time Stamp</th>
+                  <th scope="col">
+                    <span className="sr-only">Edit</span>
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {visible.slice(0, 300).map((i) => (
+                  <tr key={mailKey(i)} data-status={i.status.toLowerCase()} onClick={() => setEditing(i)}>
+                    <td data-label="ID" className="num">
+                      {i.id}
+                    </td>
+                    <td data-label="Courier Number" className="strong num">
+                      {i.courierNumber}
+                    </td>
+                    <td data-label="Courier Company">{i.courierCompany}</td>
+                    {kind === 'Department' ? (
+                      <>
+                        <td data-label="Department">{i.department}</td>
+                        <td data-label="Sender Company">{i.sender}</td>
+                      </>
+                    ) : (
+                      <>
+                        <td data-label="Sender">{i.sender}</td>
+                        <td data-label="Recipient">{i.recipient || i.recipientEmail}</td>
+                        <td data-label="On Behalf">{i.onBehalf}</td>
+                      </>
+                    )}
+                    <td data-label="Creation Time Stamp" className="num">
+                      {formatDateTime(i.created)}
+                    </td>
+                    <td data-label="Created By">{i.createdBy}</td>
+                    <td data-label="Received" className="received-cell">
+                      <span className="status-dot" />
+                      {i.status === 'Received' ? 'Yes' : 'No'}
+                    </td>
+                    <td data-label="Received By">{i.receivedBy}</td>
+                    <td data-label="Received Time Stamp" className="num">
+                      {i.receivedTimeStamp ? formatDateTime(i.receivedTimeStamp) : ''}
+                    </td>
+                    <td className="edit-cell">
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        aria-label={`Edit ${i.courierNumber}`}
+                        title="Edit"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditing(i);
+                        }}
+                      >
+                        <PencilIcon width={18} height={18} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <p className="more-note">
             {visible.length > 300 ? `Showing 300 of ${visible.length}. Use the filters to narrow down.` : `${visible.length} deliveries`}
           </p>
