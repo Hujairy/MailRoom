@@ -1,0 +1,209 @@
+==========================================================================
+ MAIL ROOM - SETUP STEPS
+ Open this file in Notepad. Follow the parts in order.
+==========================================================================
+
+
+--------------------------------------------------------------------------
+ PART 1 - CREATE THE SHAREPOINT LISTS (by hand, in the browser)
+--------------------------------------------------------------------------
+
+How to create a list:   + New  >  List  >  Blank list  >  type the name
+How to add a column:    + Add column  >  Single line of text  >  type the name
+
+Rules:
+ - Type every list and column name EXACTLY as below, with NO spaces.
+   (You can rename a column afterwards. The app uses the first name.)
+ - ReceivedTimeStamp = "Date and time" column, with "Include time" ON.
+ - Received = Single line of text. NOT a Yes/No column.
+ - Don't add any items to the lists.
+
+
+A) On the SETTINGS site
+   (everyone who uses the app = Read, only you = Edit)
+
+   List: MailroomUnits
+      No columns to add.
+
+   List: MailroomMembers
+      MemberName
+      Unit
+      Role
+
+
+B) On the BAHRAIN site
+   (only Bahrain people = Edit)
+
+   List: BahrainPersonalMail
+      CourierCompany
+      Sender
+      Recipient
+      RecipientEmail
+      OnBehalf
+      Received
+      ReceivedBy
+      ReceivedByEmail
+      ReceivedTimeStamp      <- Date and time, Include time ON
+
+   List: BahrainDepartmentMail
+      CourierCompany
+      Department
+      SenderCompany
+      Received
+      ReceivedBy
+      ReceivedByEmail
+      ReceivedTimeStamp      <- Date and time, Include time ON
+
+
+Tip: if one site is easier, you can put all 4 lists on the same site.
+Then on MailroomUnits and MailroomMembers: List settings >
+Permissions for this list > Stop inheriting permissions, and give
+everyone Read only.
+
+
+--------------------------------------------------------------------------
+ PART 2 - CHECK YOUR CONNECTIONS (make.powerapps.com)
+--------------------------------------------------------------------------
+
+Go to make.powerapps.com > Connections. You need two:
+   - SharePoint
+   - Office 365 Users
+If one is missing: + New connection > search for it > Create.
+
+
+--------------------------------------------------------------------------
+ PART 3 - FILL IN YOUR 4 VALUES IN THIS FILE
+--------------------------------------------------------------------------
+
+In Notepad press Ctrl+H (Replace). For each line below, put the word on
+the left in "Find what", your value in "Replace with", then "Replace All".
+
+   PASTE_SETTINGS_SITE_URL    the settings site address,
+                              e.g. https://bankabc.sharepoint.com/sites/MailRoomSettings
+   PASTE_BAHRAIN_SITE_URL     the Bahrain site address,
+                              e.g. https://bankabc.sharepoint.com/sites/MailRoomBahrain
+   PASTE_SHAREPOINT_ID        your SharePoint connection id   (see Part 4, step 2)
+   PASTE_OFFICE365_ID         your Office 365 Users connection id   (see Part 4, step 2)
+
+Site address = the address in the browser when you open the site's
+home page, up to the site name. No "/Lists/..." and no "/" at the end.
+
+
+--------------------------------------------------------------------------
+ PART 4 - COMMANDS (VS Code > Terminal > New Terminal > "Command Prompt")
+--------------------------------------------------------------------------
+
+Step 1 - Go to the app folder and get the latest version
+(if your MailRoom folder is somewhere else, change the first line)
+
+cd %USERPROFILE%\Documents\MailRoom
+set NODE_USE_SYSTEM_CA=1
+git pull
+npm install
+
+
+Step 2 - Find your connection ids
+
+pa connection list
+
+   Copy the id on the "shared_sharepointonline" line   -> PASTE_SHAREPOINT_ID
+   Copy the id on the "shared_office365users" line     -> PASTE_OFFICE365_ID
+   Now do Part 3 (Ctrl+H) if you haven't yet.
+
+
+Step 3 - Add the lists to the app (one line at a time)
+
+pa app add data-source --connector "shared_sharepointonline" --connection-id "PASTE_SHAREPOINT_ID" --dataset "PASTE_SETTINGS_SITE_URL" --table "MailroomUnits"
+
+pa app add data-source --connector "shared_sharepointonline" --connection-id "PASTE_SHAREPOINT_ID" --dataset "PASTE_SETTINGS_SITE_URL" --table "MailroomMembers"
+
+pa app add data-source --connector "shared_sharepointonline" --connection-id "PASTE_SHAREPOINT_ID" --dataset "PASTE_BAHRAIN_SITE_URL" --table "BahrainPersonalMail"
+
+pa app add data-source --connector "shared_sharepointonline" --connection-id "PASTE_SHAREPOINT_ID" --dataset "PASTE_BAHRAIN_SITE_URL" --table "BahrainDepartmentMail"
+
+pa app add data-source --connector "shared_office365users" --connection-id "PASTE_OFFICE365_ID"
+
+
+Step 4 - Build and publish
+
+npm run build
+pa app push
+
+
+--------------------------------------------------------------------------
+ PART 5 - IN THE APP
+--------------------------------------------------------------------------
+
+1. Open Mail Room. You should see the "Settings" page in the menu.
+2. Settings > New unit > type:   Bahrain   > Add unit
+   (it must match the list names: Bahrain -> BahrainPersonalMail)
+3. Add people to Bahrain: search their name, pick User or Admin, Add.
+   Users  = see their own mail and Department Mail.
+   Admins = also Add Mail and Maintenance.
+
+
+--------------------------------------------------------------------------
+ PART 6 - GIVE EACH PERSON ACCESS (or they still can't get in)
+--------------------------------------------------------------------------
+
+For every person you add in Settings:
+ [ ] Share the app: make.powerapps.com > Apps > Mail Room > ... > Share
+ [ ] They have a Power Apps Premium license
+ [ ] Read access to the SETTINGS site
+ [ ] Edit access to the BAHRAIN site
+
+Tip: one Entra ID / Microsoft 365 group for the Bahrain team makes this
+much easier. Share the app and the site with the group once.
+
+
+--------------------------------------------------------------------------
+ ADDING ANOTHER UNIT LATER (example: Egypt)
+--------------------------------------------------------------------------
+
+1. In the app: Settings > New unit > Egypt > Add unit.
+   It shows "Lists not added" with the list names and commands.
+2. On the Egypt site, create EgyptPersonalMail and EgyptDepartmentMail
+   with the same columns as Part 1 B. Only Egypt people = Edit.
+3. Run (replace PASTE_EGYPT_SITE_URL with the Egypt site address):
+
+cd %USERPROFILE%\Documents\MailRoom
+set NODE_USE_SYSTEM_CA=1
+
+pa app add data-source --connector "shared_sharepointonline" --connection-id "PASTE_SHAREPOINT_ID" --dataset "PASTE_EGYPT_SITE_URL" --table "EgyptPersonalMail"
+
+pa app add data-source --connector "shared_sharepointonline" --connection-id "PASTE_SHAREPOINT_ID" --dataset "PASTE_EGYPT_SITE_URL" --table "EgyptDepartmentMail"
+
+npm run build
+pa app push
+
+4. Add Egypt's people in Settings, and do Part 6 for them.
+
+
+--------------------------------------------------------------------------
+ IF SOMETHING GOES WRONG
+--------------------------------------------------------------------------
+
+"SELF_SIGNED_CERT_IN_CHAIN" or certificate error
+   -> run:  set NODE_USE_SYSTEM_CA=1   then the command again.
+
+"running scripts is disabled on this system"
+   -> you're in PowerShell. Use the Command Prompt terminal instead.
+
+"'pa' / 'npm' / 'git' is not recognized"
+   -> close VS Code completely and open it again.
+
+The app still shows the setup page
+   -> MailroomUnits or MailroomMembers wasn't added. Redo Part 4 step 3,
+      then npm run build and pa app push.
+
+A unit shows "Lists not added"
+   -> its two lists aren't added, or the names don't match the unit name.
+
+Someone sees "You don't have access to a mail room yet"
+   -> add them in Settings, and check Part 6.
+
+Someone sees "You can't open the Bahrain mail room yet"
+   -> give them Edit access to the Bahrain site.
+
+Someone sees "You don't have access to Mail Room yet"
+   -> give them Read access to the settings site.
