@@ -1,10 +1,14 @@
 <#
 .SYNOPSIS
-  Creates the two SharePoint lists used by the Mail Room code app:
-  PersonalMail and DepartmentMail, with the same fields as the original
-  Bahrain Mail Room site.
+  Creates one unit's two SharePoint lists for the Mail Room code app:
+  <Unit>PersonalMail and <Unit>DepartmentMail (e.g. BahrainPersonalMail),
+  with the same fields as the original Bahrain Mail Room site.
 
 .DESCRIPTION
+  Run it once per unit, ideally on that unit's own site (for example
+  /sites/MailRoom/Bahrain), and give only that unit's people access to the
+  site. That's what keeps each unit's records apart.
+
   Safe to re-run: existing lists and columns are skipped. Column internal
   names have no spaces (they must match src/config.ts); display names match
   the original site, e.g. "Courier Company".
@@ -17,9 +21,10 @@
     Register-PnPEntraIDAppForInteractiveLogin -ApplicationName "PnP PowerShell" -Tenant contoso.onmicrosoft.com
 
 .EXAMPLE
-  ./Create-MailroomList.ps1 -SiteUrl https://contoso.sharepoint.com/sites/MailRoom -ClientId 00000000-0000-0000-0000-000000000000
+  ./Create-MailroomLists.ps1 -Unit Bahrain -SiteUrl https://contoso.sharepoint.com/sites/MailRoom-Bahrain -ClientId 00000000-0000-0000-0000-000000000000
 #>
 param(
+  [Parameter(Mandatory = $true)] [ValidatePattern('^[A-Za-z0-9]+$')] [string] $Unit,
   [Parameter(Mandatory = $true)] [string] $SiteUrl,
   [Parameter(Mandatory = $true)] [string] $ClientId
 )
@@ -37,35 +42,33 @@ function Stamp($name, $display) {
 
 $lists = @(
   @{
-    Name    = 'PersonalMail'
+    Name    = "${Unit}PersonalMail"
     Fields  = @(
       (Text 'CourierCompany' 'Courier Company' 100),
       (Text 'Sender' 'Sender'),
       (Text 'Recipient' 'Recipient'),
       (Text 'RecipientEmail' 'Recipient Email'),
       (Text 'OnBehalf' 'On Behalf'),
-      (Text 'Unit' 'Unit' 50),
       (Text 'Received' 'Received' 3),
       (Text 'ReceivedBy' 'Received By'),
       (Text 'ReceivedByEmail' 'Received By Email'),
       (Stamp 'ReceivedTimeStamp' 'Received Time Stamp')
     )
-    Indexed = @('Unit', 'Received', 'RecipientEmail')
+    Indexed = @('Received', 'RecipientEmail')
     View    = @('ID', 'Title', 'CourierCompany', 'Sender', 'Recipient', 'OnBehalf', 'Created', 'Author', 'Received', 'ReceivedBy', 'ReceivedTimeStamp')
   },
   @{
-    Name    = 'DepartmentMail'
+    Name    = "${Unit}DepartmentMail"
     Fields  = @(
       (Text 'CourierCompany' 'Courier Company' 100),
       (Text 'Department' 'Department'),
       (Text 'SenderCompany' 'Sender Company'),
-      (Text 'Unit' 'Unit' 50),
       (Text 'Received' 'Received' 3),
       (Text 'ReceivedBy' 'Received By'),
       (Text 'ReceivedByEmail' 'Received By Email'),
       (Stamp 'ReceivedTimeStamp' 'Received Time Stamp')
     )
-    Indexed = @('Unit', 'Received')
+    Indexed = @('Received')
     View    = @('ID', 'Title', 'CourierCompany', 'Department', 'SenderCompany', 'Created', 'Author', 'Received', 'ReceivedBy', 'ReceivedTimeStamp')
   }
 )
@@ -105,6 +108,9 @@ foreach ($def in $lists) {
 }
 
 Write-Host ""
-Write-Host "Next, add both lists to the app (see README):"
-Write-Host "  pa app add data-source --connector `"shared_sharepointonline`" --connection-id <id> --dataset `"$SiteUrl`" --table `"PersonalMail`""
-Write-Host "  pa app add data-source --connector `"shared_sharepointonline`" --connection-id <id> --dataset `"$SiteUrl`" --table `"DepartmentMail`""
+Write-Host "Next (see README):"
+Write-Host "  1. Give only the $Unit team access to this site (or these two lists)."
+Write-Host "  2. Add the lists to the app:"
+Write-Host "     pa app add data-source --connector `"shared_sharepointonline`" --connection-id <id> --dataset `"$SiteUrl`" --table `"${Unit}PersonalMail`""
+Write-Host "     pa app add data-source --connector `"shared_sharepointonline`" --connection-id <id> --dataset `"$SiteUrl`" --table `"${Unit}DepartmentMail`""
+Write-Host "  3. Add $Unit to UNITS in src/config.ts, then npm run build and pa app push."

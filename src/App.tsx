@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { APP_TITLE, DEFAULT_UNIT, UNITS } from './config';
-import { openSession, type Session } from './data';
+import { APP_TITLE } from './config';
+import { openSession, type Session, type UnitAccess } from './data';
 import { DemoRepository } from './data/demo';
-import { isStaff } from './data/rules';
+import type { CurrentUser } from './data/types';
 import { initials } from './lib/format';
 import { transition } from './lib/motion';
 import { useStored } from './lib/stored';
@@ -18,13 +18,15 @@ import { MyMail } from './pages/MyMail';
 import type { MailKind } from './data/types';
 import { PAGES, type Page, type PageProps } from './pages/shared';
 
-const NAV: { page: Page; label: string; staff?: boolean }[] = [
+const NAV: { page: Page; label: string; admin?: boolean }[] = [
   { page: 'home', label: 'Home' },
   { page: 'mine', label: 'My Personal Mail' },
   { page: 'department', label: 'Department Mail' },
-  { page: 'add', label: 'Add Mail', staff: true },
-  { page: 'maintenance', label: 'Maintenance', staff: true },
+  { page: 'add', label: 'Add Mail', admin: true },
+  { page: 'maintenance', label: 'Maintenance', admin: true },
 ];
+
+const ADMIN_PAGES: Page[] = ['add', 'maintenance'];
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -61,14 +63,24 @@ export default function App() {
 }
 
 function Shell({ session }: { session: Session }) {
-  const { user, repo, params } = session;
-  const [storedUnit, setUnit] = useStored<string>('unit', DEFAULT_UNIT);
-  const paramUnit = UNITS.find((u) => u.toLowerCase() === (params.unit ?? '').toLowerCase());
-  const [unitOverride, setUnitOverride] = useState(paramUnit ?? null);
-  const unit = unitOverride ?? (UNITS.includes(storedUnit) ? storedUnit : (UNITS[0] ?? DEFAULT_UNIT));
+  const { user, params, mode } = session;
 
-  const [demoRole, setDemoRole] = useStored<'staff' | 'employee'>('demo:role', 'staff');
-  const staff = repo.mode === 'demo' ? demoRole === 'staff' : isStaff(user, unit);
+  // In demo mode, try both sides: an employee only belongs to the first unit;
+  // an admin manages every unit.
+  const [demoRole, setDemoRole] = useStored<'employee' | 'admin'>('demo:as', 'admin');
+  const units: UnitAccess[] =
+    mode === 'demo'
+      ? demoRole === 'admin'
+        ? session.units.map((u) => ({ ...u, admin: true }))
+        : session.units.slice(0, 1).map((u) => ({ ...u, admin: false }))
+      : session.units;
+
+  const [storedUnit, setUnit] = useStored<string>('unit', '');
+  const paramUnit = units.find((u) => u.config.name.toLowerCase() === (params.unit ?? '').toLowerCase());
+  const [unitOverride, setUnitOverride] = useState(paramUnit?.config.name ?? null);
+  const current = units.find((u) => u.config.name === (unitOverride ?? storedUnit)) ?? units[0];
+  const unit = current?.config.name ?? '';
+  const admin = current?.admin ?? false;
 
   const initialPage = PAGES.find((p) => p === params.page) ?? 'home';
   const [page, setPage] = useState<Page>(initialPage);
@@ -83,9 +95,11 @@ function Shell({ session }: { session: Session }) {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  const visiblePage: Page = !staff && (page === 'add' || page === 'maintenance') ? 'home' : page;
+  // Admin pages don't exist for anyone else: no navigation, no tiles, no links.
+  const visiblePage: Page = !admin && ADMIN_PAGES.includes(page) ? 'home' : page;
 
   const go = (next: Page, options?: { kind?: MailKind }) => {
+    if (!admin && ADMIN_PAGES.includes(next)) return;
     const kindChange = next === 'add' && options?.kind && options.kind !== addKind;
     if (next === visiblePage && !kindChange) return;
     transition(() => {
@@ -102,10 +116,13 @@ function Shell({ session }: { session: Session }) {
       setUnit(next);
     });
 
+  if (!current) return <NoAccess user={user} />;
+
   const props: PageProps = {
     session,
     unit,
-    staff,
+    repo: current.repo,
+    admin,
     addKind,
     go,
     notify: (text) => setToast({ id: Date.now(), text }),
@@ -123,11 +140,11 @@ function Shell({ session }: { session: Session }) {
         </button>
 
         <nav className="nav" aria-label="Pages">
-          {NAV.filter((n) => !n.staff || staff).map((n) => (
+          {NAV.filter((n) => !n.admin || admin).map((n) => (
             <button
               key={n.page}
               type="button"
-              className={`nav-item ${n.staff ? 'nav-desk' : ''}`}
+              className={`nav-item ${n.admin ? 'nav-desk' : ''}`}
               aria-current={visiblePage === n.page ? 'page' : undefined}
               onClick={() => go(n.page)}
             >
@@ -137,48 +154,57 @@ function Shell({ session }: { session: Session }) {
         </nav>
 
         <div className="bar-end">
-          {UNITS.length > 1 &&
-            (UNITS.length <= 3 ? (
+          {units.length > 1 &&
+            (units.length <= 3 ? (
               <Segmented
-                label="Mail room"
+                label="Unit"
                 size="sm"
                 value={unit}
                 onChange={changeUnit}
-                options={UNITS.map((u) => ({ value: u, label: u }))}
+                options={units.map((u) => ({ value: u.config.name, label: u.config.name }))}
               />
             ) : (
-              <select className="unit-select" aria-label="Mail room" value={unit} onChange={(e) => changeUnit(e.target.value)}>
-                {UNITS.map((u) => (
-                  <option key={u}>{u}</option>
+              <select className="unit-select" aria-label="Unit" value={unit} onChange={(e) => changeUnit(e.target.value)}>
+                {units.map((u) => (
+                  <option key={u.config.name}>{u.config.name}</option>
                 ))}
               </select>
             ))}
+          {admin && <span className="role-badge">Admin</span>}
           <span className="avatar" title={`${user.name} (${user.email})`}>
             {initials(user.name)}
           </span>
         </div>
       </header>
 
-      {repo.mode === 'demo' && (
+      {mode === 'demo' && (
         <div className="demo-strip" role="note">
           <p>
-            <strong>Demo data</strong>, saved in this browser only{user.fromPowerApps ? '' : ' (you’re a demo user outside Power Apps)'}.
+            <strong>Demo data</strong>, saved in this browser only.{' '}
+            {demoRole === 'admin'
+              ? 'As an admin you manage every unit.'
+              : `As an employee you only see ${unit}, and no admin pages.`}
           </p>
           <Segmented
             label="View as"
             size="sm"
             value={demoRole}
-            onChange={(r) => transition(() => setDemoRole(r))}
+            onChange={(r) =>
+              transition(() => {
+                setDemoRole(r);
+                setUnitOverride(null);
+              })
+            }
             options={[
               { value: 'employee', label: 'Employee' },
-              { value: 'staff', label: 'Mail room staff' },
+              { value: 'admin', label: 'Admin' },
             ]}
           />
           <button
             type="button"
             className="link-btn"
             onClick={() => {
-              if (repo instanceof DemoRepository) repo.reset();
+              session.units.forEach((u) => u.repo instanceof DemoRepository && u.repo.reset());
               setResetKey((k) => k + 1);
               setToast({ id: Date.now(), text: 'Demo data reset' });
             }}
@@ -203,6 +229,20 @@ function Shell({ session }: { session: Session }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Shown to people who can't open any unit's lists. */
+function NoAccess({ user }: { user: CurrentUser }) {
+  return (
+    <div className="boot no-access" role="alert">
+      <img className="boot-mark" src={tileUrl} alt="" width={72} height={72} />
+      <h1>You don’t have access to a mail room yet</h1>
+      <p>
+        Ask your unit’s mail room admin to give <strong>{user.email}</strong> access to the unit’s mail lists, then open the app
+        again.
+      </p>
     </div>
   );
 }

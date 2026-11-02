@@ -19,11 +19,13 @@ import type {
  */
 export class DemoRepository implements MailRepository {
   readonly mode = 'demo' as const;
+  readonly unit: string;
   private memory: MailItem[] | null = null;
   private readonly user: CurrentUser;
 
-  constructor(user: CurrentUser) {
+  constructor(user: CurrentUser, unit: string) {
     this.user = user;
+    this.unit = unit;
   }
 
   async list(query: MailQuery, top: number): Promise<MailItem[]> {
@@ -31,7 +33,6 @@ export class DemoRepository implements MailRepository {
     return this.load()
       .filter(
         (i) =>
-          i.unit === query.unit &&
           (!query.kind || i.kind === query.kind) &&
           (!query.status || i.status === query.status) &&
           (!query.recipientEmail || sameEmail(i.recipientEmail, query.recipientEmail)),
@@ -46,6 +47,7 @@ export class DemoRepository implements MailRepository {
     const now = new Date().toISOString();
     const item: MailItem = {
       ...input,
+      unit: this.unit,
       id: String(nextId),
       courierNumber: input.courierNumber.trim(),
       recipientEmail: input.recipientEmail.trim().toLowerCase(),
@@ -119,7 +121,7 @@ export class DemoRepository implements MailRepository {
   }
 
   private key() {
-    return `mailroom:demo:v2:${this.user.email}`;
+    return `mailroom:demo:v3:${this.unit}:${this.user.email}`;
   }
 
   private load(): MailItem[] {
@@ -133,7 +135,7 @@ export class DemoRepository implements MailRepository {
     } catch {
       // fall through to sample data
     }
-    this.memory = seed(this.user);
+    this.memory = seed(this.user, this.unit);
     this.persist();
     return this.memory;
   }
@@ -199,7 +201,7 @@ function at(daysAgo: number, hour: number, minute: number, second = 0): string {
   return d.toISOString();
 }
 
-function seed(user: CurrentUser): MailItem[] {
+function seed(user: CurrentUser, unit: string): MailItem[] {
   const blank = {
     sender: '',
     recipient: '',
@@ -238,5 +240,13 @@ function seed(user: CurrentUser): MailItem[] {
     { ...blank, ...me, id: '1302', kind: 'Personal', unit: 'Egypt', courierNumber: '7745 0012 8890', courierCompany: 'FEDEX', sender: 'NILE VALLEY IMPORTS', status: 'Waiting', createdBy: 'Mona Adel', created: at(1, 10, 15) },
   ];
 
-  return [...dept, ...personal].map((r) => ({ ...r, modified: r.receivedTimeStamp ?? r.created }));
+  const all = [...dept, ...personal];
+  // Units added in config.ts get a couple of sample deliveries of their own.
+  const mine = all.some((r) => r.unit === unit)
+    ? all.filter((r) => r.unit === unit)
+    : [
+        { ...blank, id: '1', kind: 'Department' as const, unit, courierNumber: '5521870001', courierCompany: 'DHL', department: 'FINANCE', sender: 'HARBOUR TRADING', status: 'Waiting' as const, createdBy: 'Mail Room Staff', created: ago(3) },
+        { ...blank, ...me, id: '1', kind: 'Personal' as const, unit, courierNumber: '37351850001', courierCompany: 'ARAMEX', sender: 'CORAL HOLDINGS', status: 'Waiting' as const, createdBy: 'Mail Room Staff', created: ago(5) },
+      ];
+  return mine.map((r) => ({ ...r, modified: r.receivedTimeStamp ?? r.created }));
 }

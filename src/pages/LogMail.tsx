@@ -18,8 +18,8 @@ type Errors = Partial<Record<Field, string>>;
 const compact = (s: string) => s.replace(/\s+/g, '').toLowerCase();
 
 /** Add Personal Mail / Add Department Mail, with the same fields as the original forms. */
-export function LogMail({ session, unit, addKind, go, notify }: PageProps) {
-  const { user, repo, directory } = session;
+export function LogMail({ session, unit, repo, addKind, go, notify }: PageProps) {
+  const { user, directory } = session;
   const [kind, setKind] = useState<MailKind>(addKind);
   const [courier, setCourier] = useState('');
   const [courierNumber, setCourierNumber] = useState('');
@@ -42,8 +42,8 @@ export function LogMail({ session, unit, addKind, go, notify }: PageProps) {
     return () => clearInterval(timer);
   }, []);
 
-  const waiting = useAsync(() => repo.list({ unit, status: 'Waiting' }, MAX_WAITING), [repo, unit]);
-  const recent = useAsync(() => repo.list({ unit }, 80), [repo, unit]);
+  const waiting = useAsync(() => repo.list({ status: 'Waiting' }, MAX_WAITING), [repo]);
+  const recent = useAsync(() => repo.list({}, 80), [repo]);
   const addedToday = useMemo(() => (recent.data ?? []).filter((i) => isToday(i.created)), [recent.data]);
   const known = useMemo(() => [...(waiting.data ?? []), ...(recent.data ?? [])], [waiting.data, recent.data]);
   const departments = useMemo(() => departmentOptions(known, DEPARTMENTS), [known]);
@@ -131,7 +131,6 @@ export function LogMail({ session, unit, addKind, go, notify }: PageProps) {
       const created = await repo.create(
         {
           kind,
-          unit,
           courierNumber: number,
           courierCompany: courier,
           sender,

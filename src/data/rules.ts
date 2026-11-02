@@ -1,4 +1,4 @@
-import { BY_HAND, MAILROOM_STAFF, MAX_RECEIVED, MAX_WAITING } from '../config';
+import { BY_HAND, MAX_RECEIVED, MAX_WAITING, SUPER_ADMINS, type UnitConfig } from '../config';
 import type { CurrentUser, MailItem, MailKind, MailRepository, Person } from './types';
 
 const norm = (value: string) => value.trim().toLowerCase();
@@ -10,21 +10,19 @@ export function departmentKey(value: string): string {
   return value.toLowerCase().replace(/[.\s]+$/g, '').replace(/\s+/g, ' ').trim();
 }
 
-export function isStaff(user: CurrentUser, unit: string): boolean {
-  const lists = Object.values(MAILROOM_STAFF);
-  if (lists.every((l) => l.length === 0)) return true;
-  const allowed = [...(MAILROOM_STAFF[unit] ?? []), ...(MAILROOM_STAFF['*'] ?? [])];
-  return allowed.some((email) => sameEmail(email, user.email));
+/** Mail room admins: the unit's admins plus the super admins. */
+export function isAdmin(user: Pick<CurrentUser, 'email'>, unit: UnitConfig): boolean {
+  return [...unit.admins, ...SUPER_ADMINS].some((email) => sameEmail(email, user.email));
 }
 
 export function isByHand(courier: string): boolean {
   return norm(courier) === norm(BY_HAND);
 }
 
-/** Who may press "Received" on a delivery. */
-export function canConfirm(item: MailItem, user: CurrentUser, staff: boolean): boolean {
+/** Who may press "Mark as received" on a delivery. */
+export function canConfirm(item: MailItem, user: CurrentUser, admin: boolean): boolean {
   if (item.status !== 'Waiting') return false;
-  if (staff || item.kind === 'Department') return true;
+  if (admin || item.kind === 'Department') return true;
   return sameEmail(item.recipientEmail, user.email);
 }
 
@@ -42,10 +40,10 @@ export function byNewest(a: MailItem, b: MailItem): number {
 }
 
 /** Loads every not-received delivery plus the most recent received ones. */
-export async function loadUnit(repo: MailRepository, unit: string, kind?: MailKind): Promise<MailItem[]> {
+export async function loadUnit(repo: MailRepository, kind?: MailKind): Promise<MailItem[]> {
   const [waiting, received] = await Promise.all([
-    repo.list({ unit, kind, status: 'Waiting' }, MAX_WAITING),
-    repo.list({ unit, kind, status: 'Received' }, MAX_RECEIVED),
+    repo.list({ kind, status: 'Waiting' }, MAX_WAITING),
+    repo.list({ kind, status: 'Received' }, MAX_RECEIVED),
   ]);
   return [...waiting, ...received].sort(byNewest);
 }

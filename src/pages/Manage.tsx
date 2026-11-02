@@ -15,8 +15,7 @@ import type { PageProps } from './shared';
 const same = (a: string, b: string) => departmentKey(a) === departmentKey(b);
 
 /** Maintenance: the original list columns, with an edit button per delivery. */
-export function Manage({ session, unit, notify }: PageProps) {
-  const { repo } = session;
+export function Manage({ session, unit, repo, notify }: PageProps) {
   const [kind, setKind] = useStored<MailKind>('maintenance:kind', 'Department');
   const [show, setShow] = useStored<Show>('maintenance:received', 'Waiting');
   const [number, setNumber] = useState('');
@@ -26,7 +25,7 @@ export function Manage({ session, unit, notify }: PageProps) {
   const [day, setDay] = useState('');
   const [editing, setEditing] = useState<MailItem | null>(null);
 
-  const items = useAsync(() => loadUnit(repo, unit, kind), [repo, unit, kind]);
+  const items = useAsync(() => loadUnit(repo, kind), [repo, kind]);
   const all = useMemo(() => items.data ?? [], [items.data]);
   const forOptions = useMemo(
     () => (kind === 'Department' ? departmentOptions(all, DEPARTMENTS) : uniqueOptions(all.map((i) => i.recipient))),
@@ -237,6 +236,7 @@ export function Manage({ session, unit, notify }: PageProps) {
       <EditDrawer
         item={editing}
         session={session}
+        repo={repo}
         onClose={() => setEditing(null)}
         onSaved={(message) => {
           notify(message);

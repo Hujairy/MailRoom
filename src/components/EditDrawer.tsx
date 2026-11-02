@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Session } from '../data';
 import { EMAIL_PATTERN, onBehalfFor } from '../data/rules';
-import { mailKey, type MailChanges, type MailItem, type Person } from '../data/types';
+import { mailKey, type MailChanges, type MailItem, type MailRepository, type Person } from '../data/types';
 import { formatDateTime } from '../lib/format';
 import { CourierPicker } from './CourierPicker';
 import { CloseIcon, UndoIcon } from './icons';
@@ -10,12 +10,13 @@ import { PeoplePicker } from './PeoplePicker';
 interface Props {
   item: MailItem | null;
   session: Session;
+  repo: MailRepository;
   onClose: () => void;
   onSaved: (message: string) => void;
 }
 
 /** Side sheet for editing a delivery and recording who received it. */
-export function EditDrawer({ item, session, onClose, onSaved }: Props) {
+export function EditDrawer({ item, session, repo, onClose, onSaved }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -39,14 +40,21 @@ export function EditDrawer({ item, session, onClose, onSaved }: Props) {
       }}
     >
       {item && (
-        <EditForm key={`${mailKey(item)}-${item.modified}`} item={item} session={session} onClose={onClose} onSaved={onSaved} />
+        <EditForm
+          key={`${mailKey(item)}-${item.modified}`}
+          item={item}
+          session={session}
+          repo={repo}
+          onClose={onClose}
+          onSaved={onSaved}
+        />
       )}
     </dialog>
   );
 }
 
-function EditForm({ item, session, onClose, onSaved }: Omit<Props, 'item'> & { item: MailItem }) {
-  const { repo, directory } = session;
+function EditForm({ item, session, repo, onClose, onSaved }: Omit<Props, 'item'> & { item: MailItem }) {
+  const { directory } = session;
   const personal = item.kind === 'Personal';
   const [courierNumber, setCourierNumber] = useState(item.courierNumber);
   const [courier, setCourier] = useState(item.courierCompany);

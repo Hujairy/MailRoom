@@ -49,7 +49,6 @@ export interface CurrentUser extends Person {
 
 export interface NewMailInput {
   kind: MailKind;
-  unit: string;
   courierNumber: string;
   courierCompany: string;
   sender: string;
@@ -62,8 +61,8 @@ export type MailChanges = Partial<
   Pick<MailItem, 'courierNumber' | 'courierCompany' | 'sender' | 'recipient' | 'recipientEmail' | 'onBehalf' | 'department'>
 >;
 
+/** Filters within one unit's lists. */
 export interface MailQuery {
-  unit: string;
   /** Omit to read both lists. */
   kind?: MailKind;
   status?: MailStatus;
@@ -72,6 +71,8 @@ export interface MailQuery {
 
 export interface MailRepository {
   readonly mode: DataMode;
+  /** The unit whose lists this repository reads. */
+  readonly unit: string;
   /** Newest first. */
   list(query: MailQuery, top: number): Promise<MailItem[]>;
   create(input: NewMailInput, user: CurrentUser): Promise<MailItem>;

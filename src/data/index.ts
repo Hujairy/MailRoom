@@ -1,14 +1,25 @@
 import { getContext } from '@microsoft/power-apps/app';
-import { DEPARTMENT_MAIL_LIST, PEOPLE_SERVICE_NAME, PERSONAL_MAIL_LIST } from '../config';
+import { PEOPLE_SERVICE_NAME, UNITS, type UnitConfig } from '../config';
 import { DemoDirectory, DemoRepository } from './demo';
 import { generatedServiceNames, isTabularService, loadGeneratedService } from './generated';
 import { NoDirectory, Office365Directory } from './people';
+import { isAdmin } from './rules';
 import { SharePointRepository } from './sharePoint';
-import type { CurrentUser, Directory, MailRepository } from './types';
+import type { CurrentUser, DataMode, Directory, MailRepository } from './types';
+
+/** A unit the signed-in person can open. */
+export interface UnitAccess {
+  config: UnitConfig;
+  repo: MailRepository;
+  /** Listed as an admin for this unit (or a super admin). */
+  admin: boolean;
+}
 
 export interface Session {
   user: CurrentUser;
-  repo: MailRepository;
+  mode: DataMode;
+  /** Only the units this person can open. Everything else stays out of the app. */
+  units: UnitAccess[];
   directory: Directory;
   /** Query parameters from the Power Apps link, e.g. ?page=mine&unit=Egypt. */
   params: Record<string, string>;
@@ -17,39 +28,64 @@ export interface Session {
 const DEMO_USER: CurrentUser = { name: 'Demo User', email: 'demo.user@contoso.com', fromPowerApps: false };
 
 /**
- * Opens the data store. Uses SharePoint when both generated list services
- * exist (Personal Mail and Department Mail), otherwise demo data. Force a
- * mode with VITE_DATA_MODE=demo|sharepoint in a `.env.local` file.
+ * Opens the session. With no generated list services, the app runs on demo
+ * data. Otherwise each unit in config.ts uses its own two lists, and the
+ * person only gets the units whose lists SharePoint lets them read.
+ * Force a mode with VITE_DATA_MODE=demo|sharepoint in a `.env.local` file.
  */
 export async function openSession(): Promise<Session> {
   const { user, params } = await readContext();
   const setting = import.meta.env.VITE_DATA_MODE ?? 'auto';
+  const listServices = generatedServiceNames().filter((n) => !looseEq(n, PEOPLE_SERVICE_NAME));
 
-  const [personal, department] =
-    setting === 'demo'
-      ? [null, null]
-      : await Promise.all([
-          loadGeneratedService(PERSONAL_MAIL_LIST.service),
-          loadGeneratedService(DEPARTMENT_MAIL_LIST.service),
-        ]);
-  if (!isTabularService(personal) || !isTabularService(department)) {
-    const missing = [
-      !isTabularService(personal) && PERSONAL_MAIL_LIST.service,
-      !isTabularService(department) && DEPARTMENT_MAIL_LIST.service,
-    ].filter(Boolean);
-    if (setting === 'sharepoint' || (personal || department)) {
-      const found = generatedServiceNames();
-      throw new Error(
-        `The app can't find ${missing.join(' and ')}. ` +
-          (found.length ? `Generated services found: ${found.join(', ')}. ` : 'No generated services were found. ') +
-          'Add both lists with "pa app add data-source" (see README), or update the service names in src/config.ts.',
-      );
-    }
-    return { user, params, repo: new DemoRepository(user), directory: new DemoDirectory(user) };
+  if (setting === 'demo' || (setting !== 'sharepoint' && listServices.length === 0)) {
+    return {
+      user,
+      params,
+      mode: 'demo',
+      units: UNITS.map((config) => ({ config, repo: new DemoRepository(user, config.name), admin: isAdmin(user, config) })),
+      directory: new DemoDirectory(user),
+    };
   }
 
+  // Each configured unit needs both of its list services.
+  const configured: { config: UnitConfig; repo: SharePointRepository }[] = [];
+  const problems: string[] = [];
+  for (const config of UNITS) {
+    const [personal, department] = await Promise.all([
+      loadGeneratedService(config.personalMailService),
+      loadGeneratedService(config.departmentMailService),
+    ]);
+    if (isTabularService(personal) && isTabularService(department)) {
+      configured.push({ config, repo: new SharePointRepository(config.name, personal, department) });
+    } else if (personal || department) {
+      problems.push(
+        `${config.name} is missing ${!isTabularService(personal) ? config.personalMailService : config.departmentMailService}`,
+      );
+    }
+  }
+  if (configured.length === 0) {
+    throw new Error(
+      'None of the units in src/config.ts have their lists added yet. ' +
+        (problems.length ? `${problems.join('. ')}. ` : '') +
+        (listServices.length ? `Generated services found: ${listServices.join(', ')}. ` : '') +
+        'Add each unit’s two lists with "pa app add data-source" (see README), or fix the service names in src/config.ts.',
+    );
+  }
+
+  // SharePoint permissions decide which units this person belongs to.
+  const access = await Promise.all(configured.map(async (u) => ({ ...u, ...(await u.repo.canOpen()) })));
+  const units = access
+    .filter((u) => u.ok)
+    .map(({ config, repo }) => ({ config, repo, admin: isAdmin(user, config) }));
+
   const directory = (await Office365Directory.open(PEOPLE_SERVICE_NAME)) ?? new NoDirectory();
-  return { user, params, repo: new SharePointRepository(personal, department), directory };
+  return { user, params, mode: 'sharepoint', units, directory };
+}
+
+function looseEq(a: string, b: string): boolean {
+  const n = (s: string) => s.replace(/[^a-z0-9]/gi, '').toLowerCase().replace(/service$/, '');
+  return n(a) === n(b);
 }
 
 async function readContext(): Promise<{ user: CurrentUser; params: Record<string, string> }> {

@@ -16,8 +16,8 @@ import type { PageProps } from './shared';
 const ALL = '*';
 const same = (a: string, b: string) => departmentKey(a) === departmentKey(b);
 
-export function DepartmentMail({ session, unit, notify }: PageProps) {
-  const { user, repo, directory } = session;
+export function DepartmentMail({ session, unit, repo, notify }: PageProps) {
+  const { user, directory } = session;
   const [stored, setDept] = useStored<string>('department', '');
   const dept = stored === ALL ? '' : stored;
   const [show, setShow] = useStored<Show>('department:received', 'Waiting');
@@ -26,7 +26,7 @@ export function DepartmentMail({ session, unit, notify }: PageProps) {
   const [senderCompany, setSenderCompany] = useState('');
   const [day, setDay] = useState('');
 
-  const items = useAsync(() => loadUnit(repo, unit, 'Department'), [repo, unit]);
+  const items = useAsync(() => loadUnit(repo, 'Department'), [repo]);
   const all = useMemo(() => items.data ?? [], [items.data]);
   const departments = useMemo(() => departmentOptions(all, DEPARTMENTS), [all]);
   const couriers = useMemo(() => uniqueOptions(all.map((i) => i.courierCompany), COURIERS), [all]);

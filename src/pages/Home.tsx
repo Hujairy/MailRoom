@@ -9,16 +9,16 @@ import { BoxIcon, EnvelopeIcon, GearIcon, PlusIcon } from '../components/icons';
 import { Slip } from '../components/Slip';
 import type { PageProps } from './shared';
 
-export function Home({ session, unit, staff, go, notify }: PageProps) {
-  const { user, repo, directory } = session;
+export function Home({ session, unit, repo, admin, go, notify }: PageProps) {
+  const { user, directory } = session;
   const [storedDept, setMyDept] = useStored<string>('department', '');
   const myDept = storedDept === '*' ? '' : storedDept;
 
   const mine = useAsync(
-    () => repo.list({ unit, kind: 'Personal', recipientEmail: user.email, status: 'Waiting' }, 100),
-    [repo, unit],
+    () => repo.list({ kind: 'Personal', recipientEmail: user.email, status: 'Waiting' }, 100),
+    [repo],
   );
-  const unitWaiting = useAsync(() => repo.list({ unit, status: 'Waiting' }, MAX_WAITING), [repo, unit]);
+  const unitWaiting = useAsync(() => repo.list({ status: 'Waiting' }, MAX_WAITING), [repo]);
 
   // Default the department from the directory the first time.
   useEffect(() => {
@@ -97,10 +97,10 @@ export function Home({ session, unit, staff, go, notify }: PageProps) {
         </button>
       </nav>
 
-      {staff && (
+      {admin && (
         <>
-          <h2 className="section-title desk-title">Mail room desk</h2>
-          <nav className="tiles tiles-desk" aria-label="Mail room desk">
+          <h2 className="section-title desk-title">Mail room admin</h2>
+          <nav className="tiles tiles-desk" aria-label="Mail room admin">
             <button type="button" className="tile tile-desk" onClick={() => go('add', { kind: 'Personal' })}>
               <PlusIcon width={26} height={26} />
               <span className="tile-title">Add Personal Mail</span>

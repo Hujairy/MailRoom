@@ -9,12 +9,12 @@ import { ReceivedFilter, type Show } from '../components/ReceivedFilter';
 import { Slip } from '../components/Slip';
 import type { PageProps } from './shared';
 
-export function MyMail({ session, unit, notify }: PageProps) {
-  const { user, repo } = session;
+export function MyMail({ session, unit, repo, notify }: PageProps) {
+  const { user } = session;
   const [show, setShow] = useStored<Show>('mine:received', 'Waiting');
   const items = useAsync(
-    () => repo.list({ unit, kind: 'Personal', recipientEmail: user.email }, MAX_RECEIVED),
-    [repo, unit, user.email],
+    () => repo.list({ kind: 'Personal', recipientEmail: user.email }, MAX_RECEIVED),
+    [repo, user.email],
   );
 
   const all = useMemo(() => items.data ?? [], [items.data]);

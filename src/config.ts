@@ -5,24 +5,51 @@
 
 export const APP_TITLE = 'Mail Room';
 
-/** Mail room locations. Each delivery belongs to one unit. */
-export const UNITS = ['Bahrain', 'Egypt'];
-
-/** Unit selected the first time someone opens the app. */
-export const DEFAULT_UNIT = 'Bahrain';
-
 /**
- * Who can log and manage deliveries, by unit. Use '*' for people who can
- * work in every unit. Emails are matched without regard to case.
+ * Mail room units. Each unit has its own two SharePoint lists, so its data is
+ * kept apart from every other unit: give each unit's people access to their
+ * unit's lists only, and the app shows them only that unit.
  *
- * While this is empty, everyone sees the mail room desk, which is handy for
- * testing. Fill it in before you share the app.
+ * To add a unit: create its lists (scripts/Create-MailroomLists.ps1 -Unit Qatar),
+ * add them with `pa app add data-source`, then add an entry here and republish.
+ *
+ * - name: shown in the app ("Bahrain Mail Room").
+ * - personalMailService / departmentMailService: the services the Power Apps
+ *   CLI generates for the unit's lists (spaces and "Service" are ignored
+ *   when matching).
+ * - admins: emails of the unit's mail room admins. Only they see Add Mail and
+ *   Maintenance. Emails are matched without regard to case.
  */
-export const MAILROOM_STAFF: Record<string, string[]> = {
-  // Bahrain: ['mailroom.bahrain@company.com'],
-  // Egypt: ['mailroom.egypt@company.com'],
-  // '*': ['mailroom.supervisor@company.com'],
-};
+export interface UnitConfig {
+  name: string;
+  personalMailService: string;
+  departmentMailService: string;
+  admins: string[];
+}
+
+export const UNITS: UnitConfig[] = [
+  {
+    name: 'Bahrain',
+    personalMailService: 'BahrainPersonalMailService',
+    departmentMailService: 'BahrainDepartmentMailService',
+    admins: [
+      // 'mailroom.bahrain@company.com',
+    ],
+  },
+  {
+    name: 'Egypt',
+    personalMailService: 'EgyptPersonalMailService',
+    departmentMailService: 'EgyptDepartmentMailService',
+    admins: [
+      // 'mailroom.egypt@company.com',
+    ],
+  },
+];
+
+/** Admins in every unit they can open, e.g. the mail room supervisor. */
+export const SUPER_ADMINS: string[] = [
+  // 'mailroom.supervisor@company.com',
+];
 
 /** Courier company buttons on the add forms. Staff can still type any other courier. */
 export const COURIERS = ['DHL', 'ARAMEX', 'FEDEX', 'UPS', 'BY HAND'];
@@ -49,14 +76,8 @@ export const DATE_LOCALE = 'en-GB';
  */
 export const PEOPLE_SERVICE_NAME = 'Office365UsersService';
 
-/**
- * The two SharePoint lists, as in the original mail room site (README:
- * "PersonalMail" and "DepartmentMail"). `service` is the name of the service
- * the Power Apps CLI generates for each list; spaces and "Service" are
- * ignored when matching. `columns` are the internal column names.
- */
+/** Internal column names of each unit's Personal Mail and Department Mail lists (see README). */
 export const PERSONAL_MAIL_LIST = {
-  service: 'PersonalMailService',
   columns: {
     id: 'ID',
     courierNumber: 'Title',
@@ -65,7 +86,6 @@ export const PERSONAL_MAIL_LIST = {
     recipient: 'Recipient',
     recipientEmail: 'RecipientEmail',
     onBehalf: 'OnBehalf',
-    unit: 'Unit',
     received: 'Received',
     receivedBy: 'ReceivedBy',
     receivedByEmail: 'ReceivedByEmail',
@@ -77,14 +97,12 @@ export const PERSONAL_MAIL_LIST = {
 } as const;
 
 export const DEPARTMENT_MAIL_LIST = {
-  service: 'DepartmentMailService',
   columns: {
     id: 'ID',
     courierNumber: 'Title',
     courierCompany: 'CourierCompany',
     department: 'Department',
     senderCompany: 'SenderCompany',
-    unit: 'Unit',
     received: 'Received',
     receivedBy: 'ReceivedBy',
     receivedByEmail: 'ReceivedByEmail',
