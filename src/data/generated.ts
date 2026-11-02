@@ -1,7 +1,7 @@
 /**
  * Finds services that the Power Apps CLI generates with
- * `pa app add data-source`. The app compiles and runs without them (demo
- * mode) and uses them automatically once the files exist.
+ * `pa app add data-source`. The app compiles without them (it shows the
+ * setup screen) and uses them automatically once the files exist.
  */
 
 export type Row = Record<string, unknown>;

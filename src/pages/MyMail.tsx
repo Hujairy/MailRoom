@@ -13,8 +13,8 @@ export function MyMail({ session, unit, repo, notify }: PageProps) {
   const { user } = session;
   const [show, setShow] = useStored<Show>('mine:received', 'Waiting');
   const items = useAsync(
-    () => repo.list({ kind: 'Personal', recipientEmail: user.email }, MAX_RECEIVED),
-    [repo, user.email],
+    () => repo.list({ kind: 'Personal', recipientEmail: [user.email, ...user.aliases] }, MAX_RECEIVED),
+    [repo, user],
   );
 
   const all = useMemo(() => items.data ?? [], [items.data]);

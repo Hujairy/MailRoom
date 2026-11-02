@@ -1,12 +1,11 @@
 import { getContext } from '@microsoft/power-apps/app';
 import { PEOPLE_SERVICE_NAME, SETTINGS_LISTS, unitListNames } from '../config';
-import { DemoDirectory, DemoRepository } from './demo';
 import { errorMessage, generatedServiceNames, isTabularService, loadGeneratedService } from './generated';
 import { NoDirectory, Office365Directory } from './people';
 import { isGeneralAdmin } from './rules';
-import { DemoSettings, membershipsOf, SharePointSettings, type MemberRecord, type SettingsData, type SettingsStore } from './settings';
+import { membershipsOf, SharePointSettings, type SettingsData, type SettingsStore } from './settings';
 import { SharePointRepository } from './sharePoint';
-import type { CurrentUser, DataMode, Directory, MailRepository } from './types';
+import type { CurrentUser, Directory, MailRepository } from './types';
 
 /** A unit the person can open. */
 export interface UnitAccess {
@@ -25,13 +24,7 @@ export interface UnitSetup {
 }
 
 export interface Session {
-  /** The person using the app. In demo mode this can be a previewed member. */
   user: CurrentUser;
-  /** The member being previewed in demo mode. */
-  previewing: MemberRecord | null;
-  /** Demo mode: the signed-in person may see the app as other members. */
-  canPreview: boolean;
-  mode: DataMode;
   /** May open Settings, and is an admin in every unit. */
   generalAdmin: boolean;
   settings: SettingsStore;
@@ -47,56 +40,62 @@ export interface Session {
   params: Record<string, string>;
 }
 
-export interface SessionOptions {
-  /** Demo mode only: the id of a member to see the app as. */
-  previewAs?: string;
+/** The app can't run until its SharePoint lists are connected. */
+export class SetupNeeded extends Error {
+  readonly user: CurrentUser;
+  readonly generalAdmin: boolean;
+  readonly reason: 'no-settings-lists' | 'settings-unreadable';
+  /** Lists already added to the app. */
+  readonly found: string[];
+
+  constructor(
+    reason: SetupNeeded['reason'],
+    user: CurrentUser,
+    generalAdmin: boolean,
+    found: string[],
+    message: string,
+  ) {
+    super(message);
+    this.reason = reason;
+    this.user = user;
+    this.generalAdmin = generalAdmin;
+    this.found = found;
+  }
 }
 
-const DEMO_USER: CurrentUser = { name: 'Demo User', email: 'demo.user@contoso.com', fromPowerApps: false };
+const LOCAL_USER: CurrentUser = { name: 'Local developer', email: 'local@localhost', aliases: [], fromPowerApps: false };
 
 /**
- * Opens the session. With no generated list services, the app runs on demo
- * data. Otherwise the units and their people come from the Mail Room
- * settings lists, each unit's mail is in its own two lists, and a person only
- * gets the units they're a member of and that SharePoint lets them read.
- * Force a mode with VITE_DATA_MODE=demo|sharepoint in a `.env.local` file.
+ * Opens the session. Units and their people come from the Mail Room settings
+ * lists, each unit's mail is in its own two lists, and a person only gets the
+ * units they're a member of and that SharePoint lets them read.
+ * Throws SetupNeeded until the settings lists are added to the app.
  */
-export async function openSession(options: SessionOptions = {}): Promise<Session> {
-  const { user: signedIn, params } = await readContext();
-  const setting = import.meta.env.VITE_DATA_MODE ?? 'auto';
-  const listServices = generatedServiceNames().filter((n) => !looseEq(n, PEOPLE_SERVICE_NAME));
-
-  if (setting === 'demo' || (setting !== 'sharepoint' && listServices.length === 0)) {
-    return openDemo(signedIn, params, options);
-  }
+export async function openSession(): Promise<Session> {
+  const context = await readContext();
+  const directory = (await Office365Directory.open(PEOPLE_SERVICE_NAME)) ?? new NoDirectory();
+  const user = await withProfile(context.user, directory);
+  const generalAdmin = isGeneralAdmin(user);
+  const found = generatedServiceNames()
+    .filter((n) => !looseEq(n, PEOPLE_SERVICE_NAME))
+    .map((n) => n.replace(/Service$/, ''));
 
   const [unitsService, membersService] = await Promise.all([
     loadGeneratedService(SETTINGS_LISTS.unitsService),
     loadGeneratedService(SETTINGS_LISTS.membersService),
   ]);
   if (!isTabularService(unitsService) || !isTabularService(membersService)) {
-    throw new Error(
-      `The Mail Room settings lists aren't added to the app yet (missing ${[
-        !isTabularService(unitsService) && 'MailroomUnits',
-        !isTabularService(membersService) && 'MailroomMembers',
-      ]
-        .filter(Boolean)
-        .join(' and ')}). Create them with scripts/Create-MailroomSettingsLists.ps1 and add them with "pa app add data-source" (see README). ` +
-        (listServices.length ? `Lists found: ${listServices.join(', ')}.` : ''),
-    );
+    throw new SetupNeeded('no-settings-lists', user, generalAdmin, found, 'The Mail Room lists aren’t connected yet.');
   }
   const settings = new SharePointSettings(unitsService, membersService);
   let data: SettingsData;
   try {
     data = await settings.load();
   } catch (e) {
-    throw new Error(
-      `${errorMessage(e)} Everyone who uses the app needs Read access to the MailroomUnits and MailroomMembers lists.`,
-    );
+    throw new SetupNeeded('settings-unreadable', user, generalAdmin, found, errorMessage(e));
   }
 
-  const generalAdmin = isGeneralAdmin(signedIn);
-  const roles = membershipsOf(signedIn.email, data);
+  const roles = membershipsOf(user, data);
   const mine = data.units.filter((u) => generalAdmin || roles.has(u.name));
 
   const resolved = await Promise.all(
@@ -129,13 +128,9 @@ export async function openSession(options: SessionOptions = {}): Promise<Session
   );
   const order = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
 
-  const directory = (await Office365Directory.open(PEOPLE_SERVICE_NAME)) ?? new NoDirectory();
   return {
-    user: signedIn,
-    previewing: null,
-    canPreview: false,
-    params,
-    mode: 'sharepoint',
+    user,
+    params: context.params,
     generalAdmin,
     settings,
     data,
@@ -153,55 +148,21 @@ export async function openSession(options: SessionOptions = {}): Promise<Session
   };
 }
 
-const demoSettings = new DemoSettings();
-
 /**
- * Demo mode. Running locally, or as a general admin in Power Apps, you're a
- * general admin and can preview the app as any member you add in Settings.
- * Anyone else in Power Apps gets no access, as with real data.
+ * A person signs in with their user principal name, which isn't always their
+ * email address. With the company directory connected, add their email so
+ * Settings and personal mail find them by either.
  */
-async function openDemo(signedIn: CurrentUser, params: Record<string, string>, options: SessionOptions): Promise<Session> {
-  const data = await demoSettings.load();
-  const owner = !signedIn.fromPowerApps || isGeneralAdmin(signedIn);
-  const previewing = owner ? (data.members.find((m) => m.id === options.previewAs) ?? null) : null;
-  const user: CurrentUser = previewing
-    ? { name: previewing.name || previewing.email, email: previewing.email, fromPowerApps: false }
-    : signedIn;
-  const generalAdmin = owner && !previewing;
-  const roles = membershipsOf(user.email, data);
+async function withProfile(user: CurrentUser, directory: Directory): Promise<CurrentUser> {
+  const profile = await directory.me();
+  if (!profile) return user;
+  const aliases = [...new Set([...user.aliases, profile.email, profile.upn].filter((a): a is string => !!a))];
   return {
-    user,
-    previewing,
-    canPreview: owner,
-    params,
-    mode: 'demo',
-    generalAdmin,
-    settings: demoSettings,
-    data,
-    units: data.units
-      .filter((u) => generalAdmin || roles.has(u.name))
-      // Demo deliveries are kept per unit for the signed-in person, so previews share them.
-      .map((u) => ({ name: u.name, repo: new DemoRepository(signedIn, u.name), admin: generalAdmin || roles.get(u.name) === 'Admin' })),
-    blocked: [],
-    setup: generalAdmin
-      ? data.units.map((u) => {
-          const names = unitListNames(u.name);
-          return { name: u.name, personalList: names.personal, departmentList: names.department, connected: true };
-        })
-      : [],
-    directory: new DemoDirectory(signedIn),
+    ...user,
+    name: user.name && user.name !== user.email ? user.name : profile.name || user.name,
+    email: profile.email || user.email,
+    aliases,
   };
-}
-
-/** Clears the demo deliveries and settings kept in this browser. */
-export function resetDemo() {
-  demoSettings.reset();
-  try {
-    const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i) ?? '');
-    keys.filter((k) => k.startsWith('mailroom:demo:v')).forEach((k) => localStorage.removeItem(k));
-  } catch {
-    // storage unavailable; nothing was saved
-  }
 }
 
 function looseEq(a: string, b: string): boolean {
@@ -212,12 +173,12 @@ function looseEq(a: string, b: string): boolean {
 async function readContext(): Promise<{ user: CurrentUser; params: Record<string, string> }> {
   try {
     const context = await withTimeout(getContext(), 5000);
-    const email = (context.user.userPrincipalName ?? '').trim().toLowerCase();
+    const upn = (context.user.userPrincipalName ?? '').trim().toLowerCase();
     const params = context.app.queryParams ?? {};
-    if (!email) return { user: DEMO_USER, params };
-    return { user: { name: context.user.fullName || email, email, fromPowerApps: true }, params };
+    if (!upn) return { user: LOCAL_USER, params };
+    return { user: { name: context.user.fullName || upn, email: upn, aliases: [upn], fromPowerApps: true }, params };
   } catch {
-    return { user: DEMO_USER, params: {} };
+    return { user: LOCAL_USER, params: {} };
   }
 }
 

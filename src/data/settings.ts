@@ -1,7 +1,7 @@
 import { SETTINGS_LISTS } from '../config';
 import { unwrap, type Row, type TabularService } from './generated';
-import { sameEmail } from './rules';
-import type { DataMode } from './types';
+import { isAddressOf } from './rules';
+import type { CurrentUser } from './types';
 
 export type Role = 'Admin' | 'User';
 
@@ -26,7 +26,6 @@ export interface SettingsData {
 
 /** Units and the people in them, managed on the Settings page. */
 export interface SettingsStore {
-  readonly mode: DataMode;
   load(): Promise<SettingsData>;
   addUnit(name: string): Promise<UnitRecord>;
   /** Removes the unit and everyone in it. Its mail lists and records stay in SharePoint. */
@@ -58,7 +57,6 @@ const toMember = (row: Row): MemberRecord => ({
 
 /** Settings stored in the MailroomUnits and MailroomMembers SharePoint lists. */
 export class SharePointSettings implements SettingsStore {
-  readonly mode = 'sharepoint' as const;
   private readonly units: TabularService;
   private readonly members: TabularService;
 
@@ -116,87 +114,11 @@ async function remove(service: TabularService, id: string, action: string) {
   if (result) unwrap(result, action);
 }
 
-/** Demo settings, kept in this browser. Starts with the Bahrain and Egypt units and nobody in them. */
-export class DemoSettings implements SettingsStore {
-  readonly mode = 'demo' as const;
-  private data: SettingsData | null = null;
-  private readonly key = 'mailroom:demo:settings:v1';
-
-  async load(): Promise<SettingsData> {
-    if (!this.data) {
-      try {
-        const raw = localStorage.getItem(this.key);
-        if (raw) this.data = JSON.parse(raw) as SettingsData;
-      } catch {
-        // fall through to defaults
-      }
-      this.data ??= {
-        units: [
-          { id: '1', name: 'Bahrain' },
-          { id: '2', name: 'Egypt' },
-        ],
-        members: [],
-      };
-    }
-    return structuredClone(this.data);
-  }
-
-  async addUnit(name: string): Promise<UnitRecord> {
-    const data = await this.load();
-    const unit = { id: nextId(data.units), name: name.trim() };
-    this.save({ ...data, units: [...data.units, unit] });
-    return unit;
-  }
-
-  async removeUnit(unit: UnitRecord): Promise<void> {
-    const data = await this.load();
-    this.save({ units: data.units.filter((u) => u.id !== unit.id), members: data.members.filter((m) => m.unit !== unit.name) });
-  }
-
-  async addMember(member: Omit<MemberRecord, 'id'>): Promise<MemberRecord> {
-    const data = await this.load();
-    const created = { ...member, email: member.email.toLowerCase(), id: nextId(data.members) };
-    this.save({ ...data, members: [...data.members, created] });
-    return created;
-  }
-
-  async setRole(member: MemberRecord, role: Role): Promise<MemberRecord> {
-    const data = await this.load();
-    this.save({ ...data, members: data.members.map((m) => (m.id === member.id ? { ...m, role } : m)) });
-    return { ...member, role };
-  }
-
-  async removeMember(member: MemberRecord): Promise<void> {
-    const data = await this.load();
-    this.save({ ...data, members: data.members.filter((m) => m.id !== member.id) });
-  }
-
-  reset(): void {
-    this.data = null;
-    try {
-      localStorage.removeItem(this.key);
-    } catch {
-      // storage unavailable
-    }
-  }
-
-  private save(data: SettingsData) {
-    this.data = data;
-    try {
-      localStorage.setItem(this.key, JSON.stringify(data));
-    } catch {
-      // storage unavailable; keep in memory
-    }
-  }
-}
-
-const nextId = (rows: { id: string }[]) => String(rows.reduce((max, r) => Math.max(max, Number(r.id) || 0), 0) + 1);
-
 /** The units a person belongs to, with their role in each. */
-export function membershipsOf(email: string, data: SettingsData): Map<string, Role> {
+export function membershipsOf(user: Pick<CurrentUser, 'email' | 'aliases'>, data: SettingsData): Map<string, Role> {
   const roles = new Map<string, Role>();
   for (const m of data.members) {
-    if (!sameEmail(m.email, email)) continue;
+    if (!isAddressOf(user, m.email)) continue;
     if (!data.units.some((u) => u.name === m.unit)) continue;
     if (roles.get(m.unit) !== 'Admin') roles.set(m.unit, m.role);
   }

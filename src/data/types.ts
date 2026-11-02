@@ -1,7 +1,6 @@
 export type MailKind = 'Personal' | 'Department';
 /** "Received: No" is Waiting; "Received: Yes" is Received. */
 export type MailStatus = 'Waiting' | 'Received';
-export type DataMode = 'demo' | 'sharepoint';
 
 /**
  * One delivery from the Personal Mail or Department Mail list. IDs are only
@@ -43,6 +42,12 @@ export interface Person {
 }
 
 export interface CurrentUser extends Person {
+  /**
+   * Every address the person is known by, lower-cased: the user principal
+   * name they sign in with and, with the company directory connected, their
+   * email address. Settings and personal mail match any of them.
+   */
+  aliases: string[];
   /** False when running outside Power Apps, for example `npm run dev`. */
   fromPowerApps: boolean;
 }
@@ -66,11 +71,11 @@ export interface MailQuery {
   /** Omit to read both lists. */
   kind?: MailKind;
   status?: MailStatus;
-  recipientEmail?: string;
+  /** Personal mail for any of these addresses. */
+  recipientEmail?: string | string[];
 }
 
 export interface MailRepository {
-  readonly mode: DataMode;
   /** The unit whose lists this repository reads. */
   readonly unit: string;
   /** Newest first. */
@@ -84,11 +89,22 @@ export interface MailRepository {
 }
 
 export interface Directory {
-  /** True when people can be searched by name (company directory or demo people). */
+  /** True when people can be searched by name (company directory). */
   readonly searchable: boolean;
   search(term: string): Promise<Person[]>;
   /** The signed-in person's department, when the directory knows it. */
   myDepartment(): Promise<string | null>;
+  /** The signed-in person's directory profile, when there is a directory. */
+  me(): Promise<Profile | null>;
+}
+
+export interface Profile {
+  name: string;
+  /** Lower-cased email address. */
+  email: string;
+  /** Lower-cased user principal name. */
+  upn: string;
+  department?: string;
 }
 
 export const mailKey = (item: Pick<MailItem, 'kind' | 'id'>) => `${item.kind}-${item.id}`;

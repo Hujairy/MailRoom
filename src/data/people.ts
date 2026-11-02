@@ -1,5 +1,5 @@
 import { loadGeneratedService, type OperationResult } from './generated';
-import type { Directory, Person } from './types';
+import type { Directory, Person, Profile } from './types';
 
 type Call = (...args: unknown[]) => Promise<OperationResult<unknown>>;
 
@@ -10,7 +10,7 @@ type Call = (...args: unknown[]) => Promise<OperationResult<unknown>>;
 export class Office365Directory implements Directory {
   readonly searchable = true;
   private readonly service: Record<string, unknown>;
-  private departmentCache: Promise<string | null> | null = null;
+  private profile: Promise<Profile | null> | null = null;
 
   constructor(service: Record<string, unknown>) {
     this.service = service;
@@ -33,20 +33,28 @@ export class Office365Directory implements Directory {
       .filter((p): p is Person => p !== null);
   }
 
-  myDepartment(): Promise<string | null> {
-    if (!this.departmentCache) {
-      this.departmentCache = (async () => {
+  me(): Promise<Profile | null> {
+    if (!this.profile) {
+      this.profile = (async () => {
         if (typeof this.service.MyProfile !== 'function') return null;
         try {
           const result = await (this.service.MyProfile as Call).call(this.service);
-          const dept = (result?.data as Record<string, unknown> | undefined)?.Department;
-          return typeof dept === 'string' && dept.trim() ? dept.trim() : null;
+          const u = (result?.data ?? {}) as Record<string, unknown>;
+          const str = (k: string) => (typeof u[k] === 'string' ? (u[k] as string).trim() : '');
+          const email = str('Mail').toLowerCase();
+          const upn = str('UserPrincipalName').toLowerCase();
+          if (!email && !upn) return null;
+          return { name: str('DisplayName'), email: email || upn, upn: upn || email, department: str('Department') || undefined };
         } catch {
           return null;
         }
       })();
     }
-    return this.departmentCache;
+    return this.profile;
+  }
+
+  async myDepartment(): Promise<string | null> {
+    return (await this.me())?.department ?? null;
   }
 }
 
@@ -69,6 +77,9 @@ export class NoDirectory implements Directory {
     return [];
   }
   async myDepartment(): Promise<string | null> {
+    return null;
+  }
+  async me(): Promise<Profile | null> {
     return null;
   }
 }

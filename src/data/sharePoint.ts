@@ -21,7 +21,6 @@ const D = DEPARTMENT_MAIL_LIST.columns;
  * plain text (Received is "Yes"/"No") plus the Received Time Stamp date.
  */
 export class SharePointRepository implements MailRepository {
-  readonly mode = 'sharepoint' as const;
   readonly unit: string;
   private readonly personal: TabularService;
   private readonly department: TabularService;
@@ -133,7 +132,10 @@ export class SharePointRepository implements MailRepository {
     if (query.status) clauses.push(`${c.received} eq '${query.status === 'Received' ? 'Yes' : 'No'}'`);
     if (query.recipientEmail) {
       if (kind !== 'Personal') return [];
-      clauses.push(`${P.recipientEmail} eq '${odata(query.recipientEmail.toLowerCase())}'`);
+      const emails = [...new Set((Array.isArray(query.recipientEmail) ? query.recipientEmail : [query.recipientEmail]).map((e) => e.trim().toLowerCase()))].filter(Boolean);
+      if (emails.length === 0) return [];
+      const match = emails.map((e) => `${P.recipientEmail} eq '${odata(e)}'`);
+      clauses.push(match.length === 1 ? match[0] : `(${match.join(' or ')})`);
     }
     const rows = unwrap(
       await this.service(kind).getAll({

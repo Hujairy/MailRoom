@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { APP_TITLE } from './config';
-import { openSession, resetDemo, type Session } from './data';
+import { openSession, SetupNeeded, type Session } from './data';
 import type { MailKind } from './data/types';
 import { initials } from './lib/format';
 import { transition } from './lib/motion';
@@ -15,6 +15,7 @@ import { LogMail } from './pages/LogMail';
 import { Manage } from './pages/Manage';
 import { MyMail } from './pages/MyMail';
 import { Settings } from './pages/Settings';
+import { Setup } from './pages/Setup';
 import { PAGES, type Page, type PageProps } from './pages/shared';
 
 type Access = 'unit' | 'admin' | 'general';
@@ -31,26 +32,26 @@ const NAV: { page: Page; label: string; access: Access }[] = [
 const ACCESS: Record<Page, Access> = Object.fromEntries(NAV.map((n) => [n.page, n.access])) as Record<Page, Access>;
 
 export default function App() {
-  const [previewAs, setPreviewAs] = useStored<string>('demo:preview', '');
   const [session, setSession] = useState<Session | null>(null);
+  const [setup, setSetup] = useState<SetupNeeded | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
   const run = useRef(0);
-  const previewRef = useRef(previewAs);
 
   /** Opens the session again, e.g. after Settings changed who is in which unit. */
-  const reload = useCallback(async (options: { previewAs?: string; animate?: boolean } = {}) => {
+  const reload = useCallback(async () => {
     const id = ++run.current;
-    const as = options.previewAs ?? previewRef.current;
-    const next = await openSession({ previewAs: as || undefined });
-    if (id !== run.current) return;
-    if (options.animate) transition(() => setSession(next));
-    else setSession(next);
+    const next = await openSession();
+    if (id === run.current) setSession(next);
   }, []);
 
   useEffect(() => {
-    reload().catch((e: unknown) => setFatal(e instanceof Error ? e.message : String(e)));
+    reload().catch((e: unknown) => {
+      if (e instanceof SetupNeeded) setSetup(e);
+      else setFatal(e instanceof Error ? e.message : String(e));
+    });
   }, [reload]);
 
+  if (setup) return <Setup problem={setup} />;
   if (fatal) {
     return (
       <div className="fatal" role="alert">
@@ -67,27 +68,16 @@ export default function App() {
       </div>
     );
   }
-  return (
-    <Shell
-      session={session}
-      reload={() => reload()}
-      preview={(id) => {
-        previewRef.current = id;
-        setPreviewAs(id);
-        return reload({ previewAs: id, animate: true });
-      }}
-    />
-  );
+  return <Shell session={session} reload={reload} />;
 }
 
 interface ShellProps {
   session: Session;
   reload: () => Promise<void>;
-  preview: (memberId: string) => Promise<void>;
 }
 
-function Shell({ session, reload, preview }: ShellProps) {
-  const { user, params, mode, units, generalAdmin } = session;
+function Shell({ session, reload }: ShellProps) {
+  const { user, params, units, generalAdmin } = session;
 
   const [storedUnit, setUnit] = useStored<string>('unit', '');
   const paramUnit = units.find((u) => u.name.toLowerCase() === (params.unit ?? '').toLowerCase());
@@ -101,7 +91,6 @@ function Shell({ session, reload, preview }: ShellProps) {
   const [addKind, setAddKind] = useState<MailKind>(params.kind?.toLowerCase() === 'department' ? 'Department' : 'Personal');
   const [visit, setVisit] = useState(0);
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
-  const [resetKey, setResetKey] = useState(0);
 
   useEffect(() => {
     if (!toast) return;
@@ -143,34 +132,7 @@ function Shell({ session, reload, preview }: ShellProps) {
     reload().catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
   };
 
-  const demoStrip =
-    mode === 'demo' ? (
-      <DemoStrip
-        session={session}
-        onPreview={(id) => {
-          setUnitOverride(null);
-          preview(id).catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
-        }}
-        onReset={() => {
-          resetDemo();
-          preview('')
-            .then(() => {
-              setResetKey((k) => k + 1);
-              notify('Demo data reset');
-            })
-            .catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
-        }}
-      />
-    ) : null;
-
-  if (!current && !generalAdmin) {
-    return (
-      <>
-        {demoStrip}
-        <NoAccess session={session} />
-      </>
-    );
-  }
+  if (!current && !generalAdmin) return <NoAccess session={session} />;
 
   const props: PageProps | null = current
     ? { session, unit, repo: current.repo, admin, addKind, go, notify }
@@ -230,9 +192,7 @@ function Shell({ session, reload, preview }: ShellProps) {
         </div>
       </header>
 
-      {demoStrip}
-
-      <main className="main" key={`${unit}-${resetKey}`}>
+      <main className="main" key={unit}>
         {props && visiblePage === 'home' && <Home {...props} />}
         {props && visiblePage === 'mine' && <MyMail {...props} />}
         {props && visiblePage === 'department' && <DepartmentMail {...props} />}
@@ -285,58 +245,6 @@ function useStackedBar() {
     return () => observer.disconnect();
   });
   return { barRef, stacked };
-}
-
-/** Demo mode: you're a general admin, and can see the app as anyone you've added in Settings. */
-function DemoStrip({
-  session,
-  onPreview,
-  onReset,
-}: {
-  session: Session;
-  onPreview: (memberId: string) => void;
-  onReset: () => void;
-}) {
-  const { data, previewing, canPreview } = session;
-  // One option per person, with every unit they're in.
-  const people = new Map<string, { id: string; name: string; units: string[] }>();
-  for (const m of data.members) {
-    const entry = people.get(m.email) ?? { id: m.id, name: m.name || m.email, units: [] };
-    entry.units.push(`${m.unit} ${m.role.toLowerCase()}`);
-    people.set(m.email, entry);
-  }
-  const selected = previewing ? (people.get(previewing.email)?.id ?? previewing.id) : '';
-
-  return (
-    <div className="demo-strip" role="note">
-      <p>
-        <strong>Demo data</strong>, saved in this browser only.{' '}
-        {!canPreview
-          ? ''
-          : previewing
-            ? `You’re seeing what ${previewing.name || previewing.email} sees.`
-            : people.size === 0
-              ? 'You’re a general admin. Add people in Settings to see the app as them.'
-              : 'You’re a general admin.'}
-      </p>
-      {canPreview && (
-        <label className="preview-pick">
-          <span>View as</span>
-          <select value={selected} onChange={(e) => onPreview(e.target.value)}>
-            <option value="">You (general admin)</option>
-            {[...people.values()].map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}: {p.units.join(', ')}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      <button type="button" className="link-btn" onClick={onReset}>
-        Reset demo data
-      </button>
-    </div>
-  );
 }
 
 /** Shown to people who can't open any unit. */

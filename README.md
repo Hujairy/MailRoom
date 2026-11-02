@@ -76,7 +76,7 @@ The two **settings lists** hold the units and their people:
 | | Unit |
 | | Role: `Admin` or `User` |
 
-Until the lists are connected, the app runs on **demo data**, saved in your browser only. The demo deliveries copy the original site, such as 11624 / BY HAND / TRADE FINANCE DEPT. / BAHRAIN STEEL. People's names are placeholders because this repository is public. In demo mode you're a general admin: add people in Settings, then use **View as** to see the app as each of them.
+Everything is stored in these SharePoint lists; the app has no demo data. Until the settings lists are added, general admins see a setup screen with these steps, and everyone else sees "not set up yet". The screenshots use placeholder names.
 
 ## Deploy
 
@@ -98,78 +98,71 @@ If you already cloned it, run `git pull` and `npm install` in the folder instead
 
 ## Set up the lists
 
-All the scripts need PowerShell 7.4+ and [PnP.PowerShell](https://pnp.github.io/powershell/). Run `pa connection list` to find your SharePoint connection id for the `pa app add data-source` commands.
+Until this is done, the app opens on a setup screen with the same steps, where you can type your site addresses to fill in the commands.
 
-### 1. The settings lists (once)
+### 1. Create the lists in SharePoint
 
-Create a SharePoint site for them, for example *Mail Room Settings*. Give everyone who uses the app **Read** access, and only the general admins **Edit** (or Owner) access. Then:
+Create each list from **+ New → List → Blank list**, with the name exactly as shown. For each column, choose **+ Add column → Single line of text** and type the name exactly as shown, **with no spaces** (you can rename it afterwards; the app uses the first name). Don't add any items.
+
+**Settings lists**, on a site that everyone who uses the app can **read**, but only general admins can **edit**, for example a new *Mail Room Settings* site. Otherwise people could add themselves to a unit directly in SharePoint.
+
+| List | Columns to add |
+| --- | --- |
+| `MailroomUnits` | None. The built-in Title column holds the unit name. |
+| `MailroomMembers` | `MemberName`, `Unit`, `Role`. Title holds the person's email. |
+
+**Each unit's lists**, ideally on the unit's own site, starting with Bahrain. Give only the unit's people (ideally one Entra ID group) **Edit** access to that site.
+
+| List | Columns to add |
+| --- | --- |
+| `BahrainPersonalMail` | `CourierCompany`, `Sender`, `Recipient`, `RecipientEmail`, `OnBehalf`, `Received`, `ReceivedBy`, `ReceivedByEmail`, and `ReceivedTimeStamp` |
+| `BahrainDepartmentMail` | `CourierCompany`, `Department`, `SenderCompany`, `Received`, `ReceivedBy`, `ReceivedByEmail`, and `ReceivedTimeStamp` |
+
+- `ReceivedTimeStamp` is **Date and time**, with **Include time** turned on. Everything else is single line of text.
+- `Received` holds the text `Yes` or `No`. Don't make it a Yes/No column.
+- A unit with spaces in its name drops them: *Saudi Arabia* uses `SaudiArabiaPersonalMail`.
+- Once a list has a few thousand items, index `Received` on both mail lists and `RecipientEmail` on the personal list (**List settings → Indexed columns**).
+
+<details>
+<summary>Creating the lists with PowerShell instead</summary>
+
+If you can run PowerShell 7.4+ with [PnP.PowerShell](https://pnp.github.io/powershell/) (it needs an Entra ID app registration from IT):
 
 ```powershell
 ./scripts/Create-MailroomSettingsLists.ps1 -SiteUrl https://<tenant>.sharepoint.com/sites/<settings-site> -ClientId <entra-app-client-id>
-```
-
-```
-pa app add data-source --connector "shared_sharepointonline" --connection-id "<id>" --dataset "https://<tenant>.sharepoint.com/sites/<settings-site>" --table "MailroomUnits"
-pa app add data-source --connector "shared_sharepointonline" --connection-id "<id>" --dataset "https://<tenant>.sharepoint.com/sites/<settings-site>" --table "MailroomMembers"
-```
-
-### 2. Each unit's lists
-
-Do this once per unit, starting with Bahrain. Once the app is published, **Add unit** in Settings shows these commands with the unit's names filled in.
-
-**Create the unit's site and lists.** Create a SharePoint site for the unit (for example *Mail Room – Bahrain*), then:
-
-```powershell
 ./scripts/Create-MailroomLists.ps1 -Unit Bahrain -SiteUrl https://<tenant>.sharepoint.com/sites/<bahrain-site> -ClientId <entra-app-client-id>
 ```
-
-It creates `BahrainPersonalMail` and `BahrainDepartmentMail` with all the fields above. A unit with spaces in its name drops them: *Saudi Arabia* uses `SaudiArabiaPersonalMail`.
-
-<details>
-<summary>Creating the lists by hand instead</summary>
-
-Use list names without spaces. Create each column with the internal name shown, then rename it to the display name:
-
-- **&lt;Unit&gt;PersonalMail**: `CourierCompany`, `Sender`, `Recipient`, `RecipientEmail`, `OnBehalf`, `Received`, `ReceivedBy`, `ReceivedByEmail` (all single line of text), and `ReceivedTimeStamp` (date and time).
-- **&lt;Unit&gt;DepartmentMail**: `CourierCompany`, `Department`, `SenderCompany`, `Received`, `ReceivedBy`, `ReceivedByEmail` (all single line of text), and `ReceivedTimeStamp` (date and time).
-- **MailroomUnits**: just the Title column.
-- **MailroomMembers**: `MemberName`, `Unit` and `Role` (all single line of text). Title holds the email.
-
-Index `Received` on both mail lists, and `RecipientEmail` on the personal list.
 </details>
 
-**Set permissions.** Give the unit's people (ideally one Entra ID group) **Edit** access to the unit's site, and nobody else.
+### 2. Add the lists to the app and publish
 
-**Add the lists to the app:**
+In VS Code's Command Prompt, in the MailRoom folder. `pa connection list` shows your SharePoint connection's id; if there isn't one, create it at make.powerapps.com under **Connections**.
 
 ```
+pa connection list
+pa app add data-source --connector "shared_sharepointonline" --connection-id "<id>" --dataset "https://<tenant>.sharepoint.com/sites/<settings-site>" --table "MailroomUnits"
+pa app add data-source --connector "shared_sharepointonline" --connection-id "<id>" --dataset "https://<tenant>.sharepoint.com/sites/<settings-site>" --table "MailroomMembers"
 pa app add data-source --connector "shared_sharepointonline" --connection-id "<id>" --dataset "https://<tenant>.sharepoint.com/sites/<bahrain-site>" --table "BahrainPersonalMail"
 pa app add data-source --connector "shared_sharepointonline" --connection-id "<id>" --dataset "https://<tenant>.sharepoint.com/sites/<bahrain-site>" --table "BahrainDepartmentMail"
-```
-
-### 3. Publish, then add units and people
-
-```
+pa app add data-source --connector "shared_office365users" --connection-id "<office365users-id>"
 npm run build
 pa app push
 git add -A
-git commit -m "Add Bahrain lists"
+git commit -m "Connect the SharePoint lists"
 git push
 ```
 
-Open the app and go to **Settings**. Add each unit with the same name you used for its lists, then add its people as Users or Admins.
+The Office 365 Users line is optional but recommended. Admins can then find people by name, Department Mail opens on each person's department, and people whose sign-in name differs from their email address are still recognised.
 
-- People and roles take effect as soon as you save. Nothing needs rebuilding.
-- A unit whose lists aren't added yet shows **Lists not added** with the commands to run. Its people see "not set up yet" until you add the lists and publish.
-- **Remove unit** takes the unit and its people out of the app. Its SharePoint lists and deliveries are kept.
+### 3. Add units and people, and give them access
 
-### Optional: company directory search
+Open the app and go to **Settings**. Add each unit with the same name you used for its lists, then add its people as Users or Admins. People and roles take effect straight away; nothing needs rebuilding.
 
-Add Office 365 Users so admins can find recipients by name. Department Mail will also open on each person's own department.
+Everyone you add also needs:
+- **The app shared with them** in Power Apps (make.powerapps.com → **Apps** → Mail Room → **Share**), and a Power Apps Premium license.
+- **Read** access to the settings site, and **Edit** access to their unit's site.
 
-```
-pa app add data-source --connector "shared_office365users" --connection-id "<office365users-connection-id>"
-```
+**Adding another unit later:** add it in Settings. It shows **Lists not added**, with the list names and the commands to run. Create its two lists, add them to the app, and publish. **Remove unit** takes a unit and its people out of the app; its SharePoint lists and deliveries are kept.
 
 ## Notifications
 
@@ -197,9 +190,10 @@ Brand colours are at the top of [`src/styles.css`](src/styles.css): cyan `#009CB
 
 ## Troubleshooting
 
-- **"The Mail Room settings lists aren't added to the app yet"**: add MailroomUnits and MailroomMembers (step 1 above), then build and push.
-- **"Everyone who uses the app needs Read access…"**: the person can't read the settings lists. Give them Read access to the settings site.
-- **"You don't have access to a mail room yet"**: the person isn't in any unit. Add them in Settings. Emails are matched without regard to case.
+- **The setup screen still shows**: MailroomUnits and MailroomMembers aren't added to the app yet. Add them (step 2), then build and push.
+- **Someone can't open the app at all**: share the app with them in Power Apps, and check their license.
+- **"You don't have access to Mail Room yet"**: the person can't read the settings lists. Give them Read access to the settings site.
+- **"You don't have access to a mail room yet"**: the person isn't in any unit, or their address doesn't match. Add them in Settings with the address they sign in with, or add Office 365 Users (step 2) so either their sign-in name or their email works. Case doesn't matter.
 - **"You can't open the … mail room yet"**: they're in the unit, but can't open its lists. Check the unit site's permissions.
 - **A unit shows "Lists not added"**: its two lists aren't in the app, or their names don't match the unit's name. The unit's card shows the names it expects.
 - **Settings doesn't appear**: only the emails in `GENERAL_ADMINS` see it.

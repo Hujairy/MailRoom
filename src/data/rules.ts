@@ -5,14 +5,19 @@ const norm = (value: string) => value.trim().toLowerCase();
 
 export const sameEmail = (a: string, b: string) => !!a && norm(a) === norm(b);
 
+/** True when the address belongs to the person, by their email or any sign-in alias. */
+export function isAddressOf(person: { email: string; aliases?: string[] }, address: string): boolean {
+  return [person.email, ...(person.aliases ?? [])].some((a) => sameEmail(a, address));
+}
+
 /** Matches department names loosely, so "Trade Finance Dept." and "TRADE FINANCE DEPT" are the same. */
 export function departmentKey(value: string): string {
   return value.toLowerCase().replace(/[.\s]+$/g, '').replace(/\s+/g, ' ').trim();
 }
 
 /** General admins (set in config.ts) manage Settings and are admins in every unit. */
-export function isGeneralAdmin(user: Pick<CurrentUser, 'email'>): boolean {
-  return GENERAL_ADMINS.some((email) => sameEmail(email, user.email));
+export function isGeneralAdmin(user: Pick<CurrentUser, 'email' | 'aliases'>): boolean {
+  return GENERAL_ADMINS.some((email) => isAddressOf(user, email));
 }
 
 export function isByHand(courier: string): boolean {
@@ -23,15 +28,15 @@ export function isByHand(courier: string): boolean {
 export function canConfirm(item: MailItem, user: CurrentUser, admin: boolean): boolean {
   if (item.status !== 'Waiting') return false;
   if (admin || item.kind === 'Department') return true;
-  return sameEmail(item.recipientEmail, user.email);
+  return isAddressOf(user, item.recipientEmail);
 }
 
 /**
  * "On Behalf": when someone other than the recipient receives personal mail,
  * it's recorded as received on behalf of the recipient.
  */
-export function onBehalfFor(item: MailItem, receivedBy: Person): string {
-  if (item.kind !== 'Personal' || !item.recipientEmail || sameEmail(item.recipientEmail, receivedBy.email)) return '';
+export function onBehalfFor(item: MailItem, receivedBy: Person & { aliases?: string[] }): string {
+  if (item.kind !== 'Personal' || !item.recipientEmail || isAddressOf(receivedBy, item.recipientEmail)) return '';
   return item.recipient || item.recipientEmail;
 }
 

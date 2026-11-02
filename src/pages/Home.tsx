@@ -15,7 +15,7 @@ export function Home({ session, unit, repo, admin, go, notify }: PageProps) {
   const myDept = storedDept === '*' ? '' : storedDept;
 
   const mine = useAsync(
-    () => repo.list({ kind: 'Personal', recipientEmail: user.email, status: 'Waiting' }, 100),
+    () => repo.list({ kind: 'Personal', recipientEmail: [user.email, ...user.aliases], status: 'Waiting' }, 100),
     [repo],
   );
   const unitWaiting = useAsync(() => repo.list({ status: 'Waiting' }, MAX_WAITING), [repo]);

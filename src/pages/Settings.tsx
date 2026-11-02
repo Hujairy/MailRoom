@@ -1,11 +1,12 @@
-import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { GENERAL_ADMINS, unitListNames } from '../config';
 import type { Session } from '../data';
-import { sameEmail } from '../data/rules';
+import { isAddressOf, sameEmail } from '../data/rules';
 import type { MemberRecord, Role, SettingsData, UnitRecord } from '../data/settings';
 import type { Person } from '../data/types';
 import { initials, plural } from '../lib/format';
-import { BuildingIcon, CopyIcon, PlusIcon, TrashIcon, UsersIcon } from '../components/icons';
+import { BuildingIcon, PlusIcon, TrashIcon, UsersIcon } from '../components/icons';
+import { addDataSourceCommands, ColumnHelp, Command, ListRecipe, unitRecipes } from '../components/ListRecipe';
 import { PageHead } from '../components/PageHead';
 import { PeoplePicker } from '../components/PeoplePicker';
 import { Segmented } from '../components/Segmented';
@@ -27,7 +28,7 @@ const ROLE_OPTIONS: { value: Role; label: string }[] = [
 
 /** General admins only: units, and who is a user or an admin in each. */
 export function Settings({ session, notify, onChanged }: Props) {
-  const { settings, user, mode } = session;
+  const { settings, user } = session;
   const [data, setData] = useState<SettingsData>(session.data);
   const [selected, setSelected] = useState(() => data.units[0]?.name ?? '');
   const [busy, setBusy] = useState<string | null>(null);
@@ -45,7 +46,6 @@ export function Settings({ session, notify, onChanged }: Props) {
   );
 
   const statusOf = (name: string): Status => {
-    if (mode === 'demo') return 'ready';
     const setup = session.setup.find((s) => s.name === name);
     if (!setup?.connected) return 'lists';
     return session.blocked.some((b) => b.name === name) ? 'locked' : 'ready';
@@ -145,14 +145,13 @@ export function Settings({ session, notify, onChanged }: Props) {
         <p className="muted">
           Full access: every unit, the admin pages, and this page. The list is set in <code>src/config.ts</code> so nobody can be
           locked out from here.
-          {mode === 'demo' && ' In demo mode you’re a general admin too.'}
         </p>
         <ul className="admin-list">
           {GENERAL_ADMINS.map((email) => (
             <li key={email}>
               <span className="person-avatar">{initials(email.replace(/@.*/, '').replace(/[._]/g, ' '))}</span>
               <span className="admin-email">{email}</span>
-              {sameEmail(email, user.email) && <span className="kind-tag">You</span>}
+              {isAddressOf(user, email) && <span className="kind-tag">You</span>}
             </li>
           ))}
         </ul>
@@ -408,7 +407,7 @@ function UnitPanel({
       </form>
       <p className="muted small role-help">
         <strong>Users</strong> see their own mail and Department Mail. <strong>Admins</strong> also add mail and use Maintenance.
-        {session.mode === 'sharepoint' && <> Everyone here also needs Edit access to {unit.name}’s SharePoint site.</>}
+        {' '}Everyone here also needs the app shared with them, and edit access to {unit.name}’s SharePoint site.
       </p>
     </section>
   );
@@ -416,60 +415,39 @@ function UnitPanel({
 
 /** What it takes to connect a new unit: its two lists, added to the app and published. */
 function SetupSteps({ unit }: { unit: string }) {
-  const names = unitListNames(unit);
-  const site = `https://<tenant>.sharepoint.com/sites/<${names.key.toLowerCase()}-site>`;
-  const create = `./scripts/Create-MailroomLists.ps1 -Unit ${names.key} -SiteUrl ${site} -ClientId <entra-app-client-id>`;
-  const add = [
-    `pa app add data-source --connector "shared_sharepointonline" --connection-id "<id>" --dataset "${site}" --table "${names.personal}"`,
-    `pa app add data-source --connector "shared_sharepointonline" --connection-id "<id>" --dataset "${site}" --table "${names.department}"`,
-    'npm run build',
-    'pa app push',
-  ].join('\n');
+  const [site, setSite] = useState('');
+  const recipes = unitRecipes(unit);
+  const commands = [addDataSourceCommands(site, recipes.map((r) => r.name)), 'npm run build', 'pa app push'].join('\n');
 
   return (
     <div className="setup-box">
       <p className="setup-lede">
-        <strong>{unit} isn’t ready yet.</strong> Its people won’t see it until its two lists, {names.personal} and{' '}
-        {names.department}, are created and added to the app.
+        <strong>{unit} isn’t ready yet.</strong> Its people won’t see it until its two lists are created and added to the app.
       </p>
       <ol className="setup-steps">
         <li>
-          Create the lists on the unit’s SharePoint site (PowerShell 7 with PnP.PowerShell):
-          <Command text={create} />
+          Create these lists on {unit}’s SharePoint site, and give only {unit}’s people edit access to it:
+          <div className="recipes">
+            {recipes.map((r) => (
+              <ListRecipe key={r.name} recipe={r} />
+            ))}
+          </div>
+          <ColumnHelp />
         </li>
-        <li>Give the unit’s people Edit access to that site, and nobody else.</li>
         <li>
-          In the app’s folder, add the lists and publish:
-          <Command text={add} />
+          In the app’s folder, add the lists and publish. Paste the site address to fill in the commands:
+          <label className="field setup-site">
+            <span className="sr-only">{unit} site address</span>
+            <input
+              value={site}
+              onChange={(e) => setSite(e.target.value)}
+              placeholder={`https://bankabc.sharepoint.com/sites/MailRoom${unitListNames(unit).key}`}
+              spellCheck={false}
+            />
+          </label>
+          <Command text={commands} />
         </li>
       </ol>
-    </div>
-  );
-}
-
-function Command({ text }: { text: string }) {
-  const ref = useRef<HTMLPreElement>(null);
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    } catch {
-      // Clipboard blocked (e.g. inside the Power Apps frame): select the text instead.
-      const range = document.createRange();
-      if (ref.current) range.selectNodeContents(ref.current);
-      const selection = window.getSelection();
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-    }
-  }
-  return (
-    <div className="command">
-      <pre ref={ref}>{text}</pre>
-      <button type="button" className="icon-btn" aria-label={copied ? 'Copied' : 'Copy'} title={copied ? 'Copied' : 'Copy'} onClick={() => void copy()}>
-        <CopyIcon width={17} height={17} />
-      </button>
     </div>
   );
 }
