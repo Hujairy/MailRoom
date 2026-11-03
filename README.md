@@ -6,6 +6,8 @@ A mail room app for Bank ABC, built as a [Power Apps code app](https://learn.mic
 
 ![Home with deliveries waiting](docs/home.png)
 
+> **Don't want Power Apps licences?** The [`website`](website) folder has the same Mail Room as a standalone website that uses the same SharePoint lists, with no Power Apps licence for users. Setup: [WEBSITE-SETUP.txt](WEBSITE-SETUP.txt).
+
 ## What it does
 
 **Everyone in a unit**

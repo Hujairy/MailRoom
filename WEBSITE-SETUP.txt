@@ -1,0 +1,184 @@
+==========================================================================
+ MAIL ROOM WEBSITE - SETUP STEPS
+ No Power Apps licence needed. Same SharePoint lists, same data.
+ Open this file in Notepad. Follow the parts in order.
+==========================================================================
+
+How it works:
+ - Mail Room becomes a normal website (in the "website" folder).
+ - People sign in with their Bank ABC Microsoft account.
+ - It reads and writes the SAME SharePoint lists as before, as the
+   signed-in person, so SharePoint permissions still keep units apart.
+ - Users need only their normal Microsoft 365 account. No Power Apps.
+
+You need IT for two things: the app registration (Part 1) and hosting the
+website (Part 5). You can test on your own laptop before hosting.
+
+
+--------------------------------------------------------------------------
+ PART 1 - APP REGISTRATION (ask IT, about 5 minutes)
+--------------------------------------------------------------------------
+
+Send this to IT:
+
+  Please create an app registration for our Mail Room website:
+  entra.microsoft.com > App registrations > New registration
+   - Name: Mail Room
+   - Supported account types: this organizational directory only
+   - Redirect URI: platform "Single-page application (SPA)",
+       http://localhost:5173/
+     (we'll add the real website address later, see Part 5)
+  Then API permissions > Add a permission > Microsoft Graph >
+  Delegated permissions:
+       User.Read
+       User.ReadBasic.All
+       Sites.ReadWrite.All
+       Sites.Manage.All      (only used by general admins to create lists)
+  Then "Grant admin consent for Bank ABC".
+  Please send me the "Application (client) ID" and the
+  "Directory (tenant) ID" from the Overview page.
+
+Note for IT: the permissions are delegated, so the website can only do
+what each signed-in person can already do in SharePoint.
+
+
+--------------------------------------------------------------------------
+ PART 2 - FILL IN THE WEBSITE SETTINGS
+--------------------------------------------------------------------------
+
+Open this file in VS Code:   website\public\mailroom.config.json
+
+Replace the PASTE_ values (keep the quotes):
+
+{
+  "tenantId": "PASTE_DIRECTORY_TENANT_ID",
+  "clientId": "PASTE_APPLICATION_CLIENT_ID",
+  "settingsSiteUrl": "PASTE_SETTINGS_SITE_URL",
+  "generalAdmins": ["hawra.alhujairy@bank-abc.com"]
+}
+
+   tenantId         Directory (tenant) ID from IT
+   clientId         Application (client) ID from IT
+   settingsSiteUrl  the site with MailroomUnits and MailroomMembers,
+                    e.g. https://bankabc.sharepoint.com/sites/MailRoomSettings
+   generalAdmins    people with full access. Add more like this:
+                    ["hawra.alhujairy@bank-abc.com", "someone@bank-abc.com"]
+
+Save the file.
+
+
+--------------------------------------------------------------------------
+ PART 3 - TEST ON YOUR LAPTOP (VS Code > Terminal > "Command Prompt")
+--------------------------------------------------------------------------
+
+cd %USERPROFILE%\Documents\MailRoom
+set NODE_USE_SYSTEM_CA=1
+git pull
+cd website
+npm install
+npm run dev
+
+Then open in the browser:   http://localhost:5173/
+Sign in with your Bank ABC account.
+
+To stop the test website: click the terminal and press Ctrl+C.
+Next time, only:  cd %USERPROFILE%\Documents\MailRoom\website  then
+                  set NODE_USE_SYSTEM_CA=1  then  npm run dev
+
+
+--------------------------------------------------------------------------
+ PART 4 - FIRST TIME IN THE WEBSITE (as general admin)
+--------------------------------------------------------------------------
+
+Your existing units, people and deliveries are already there.
+
+1. Go to Settings. You'll see "All units use the settings site".
+   Click "Add it for me". (It adds a SiteUrl column to MailroomUnits.
+   If it asks you to approve a permission, approve, then click again.)
+2. Click Bahrain > the pencil next to "SharePoint site" > paste the
+   Bahrain site address > Save. Bahrain should turn "Ready".
+   (If your Bahrain lists are on the settings site, skip this.)
+3. Check Home, My Personal Mail and Department Mail work.
+
+Adding a new unit from now on (no rebuild, no commands):
+   Settings > New unit > name + its SharePoint site > Add unit >
+   "Create them for me" (creates its two lists) > add its people.
+   Give the unit's people Edit access to that site.
+
+
+--------------------------------------------------------------------------
+ PART 5 - PUBLISH THE WEBSITE FOR EVERYONE (with IT)
+--------------------------------------------------------------------------
+
+1. Build it:
+
+cd %USERPROFILE%\Documents\MailRoom\website
+set NODE_USE_SYSTEM_CA=1
+npm run build
+
+   This makes the folder:  website\dist
+   (index.html, mailroom.config.json, favicon.png, assets folder)
+
+2. Ask IT to host the "dist" folder as a website, on HTTPS. Any of:
+   - the bank's internal web server (IIS): copy dist to a new site
+   - Azure Static Web Apps (has a free plan)
+   - any other static web hosting
+   There's no server code and no database; it's just files.
+
+3. Ask IT to add the website's address as another Single-page
+   application redirect URI in the app registration, exactly as it
+   opens in the browser, e.g.  https://mailroom.bank-abc.com/
+
+4. Send people the address. They sign in, and see their own unit.
+
+To change settings later (e.g. add a general admin), edit
+mailroom.config.json in the hosted folder. No rebuild needed.
+
+To publish a new version later: git pull > npm install > npm run build
+> give IT the new dist folder (keep their mailroom.config.json).
+
+
+--------------------------------------------------------------------------
+ PART 6 - WHAT EACH PERSON NEEDS
+--------------------------------------------------------------------------
+
+ [ ] Added in Settings (User or Admin, in their unit)
+ [ ] Read access to the SETTINGS site
+ [ ] Edit access to their UNIT's site
+ That's all. No Power Apps licence, no app sharing.
+
+
+--------------------------------------------------------------------------
+ IF SOMETHING GOES WRONG
+--------------------------------------------------------------------------
+
+"Mail Room needs its settings"
+   -> mailroom.config.json still has PASTE_ values (Part 2).
+
+Sign-in error AADSTS50011 (redirect URI doesn't match)
+   -> the address in the browser must be in the app registration as a
+      Single-page application redirect URI, exactly (with the / at the end).
+
+"Need admin approval" / AADSTS65001
+   -> IT hasn't clicked "Grant admin consent" (Part 1).
+
+"Mail Room can't open its settings site"
+   -> settingsSiteUrl is wrong, or you can't open that site.
+
+"You don't have access to Mail Room yet"
+   -> the person needs Read access to the settings site.
+
+"You don't have access to a mail room yet"
+   -> add them in Settings.
+
+"You can't open the Bahrain mail room yet"
+   -> give them Edit access to the Bahrain site.
+
+A unit shows "Lists not created" or "Can't open its site"
+   -> check its SharePoint site address in Settings (pencil icon).
+
+npm errors with SELF_SIGNED_CERT_IN_CHAIN
+   -> run  set NODE_USE_SYSTEM_CA=1  first.
+
+"Port 5173 is in use"
+   -> the test website is already running in another terminal.

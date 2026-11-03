@@ -1,0 +1,6 @@
+{
+  "tenantId": "PASTE_DIRECTORY_TENANT_ID",
+  "clientId": "PASTE_APPLICATION_CLIENT_ID",
+  "settingsSiteUrl": "PASTE_SETTINGS_SITE_URL",
+  "generalAdmins": ["hawra.alhujairy@bank-abc.com"]
+}
