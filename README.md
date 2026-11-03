@@ -80,7 +80,7 @@ Everything is stored in these SharePoint lists; the app has no demo data. Until 
 
 ## Deploy
 
-> **Step-by-step with copy-paste commands:** [SETUP-STEPS.txt](SETUP-STEPS.txt) (open the raw file and save it, or copy it into Notepad).
+> **Step-by-step with copy-paste commands:** [SETUP-STEPS.txt](SETUP-STEPS.txt) (open the raw file and save it, or copy it into Notepad). Moving to a production environment: [MOVE-TO-PROD.txt](MOVE-TO-PROD.txt).
 
 Use a **Command Prompt** terminal in VS Code. If you see a certificate error, run `set NODE_USE_SYSTEM_CA=1` first.
 

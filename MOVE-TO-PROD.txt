@@ -1,0 +1,145 @@
+==========================================================================
+ MAIL ROOM - MOVE FROM DEV TO PROD
+ Open this file in Notepad. Follow the parts in order.
+==========================================================================
+
+What happens:
+ - You publish a second copy of Mail Room into the Prod environment.
+ - It uses the SAME SharePoint lists, so your units, people and
+   deliveries are all there already. Nothing to re-add in Settings.
+ - Prod gets its own app link. Share that one with users.
+ - The Dev app stays for testing.
+
+
+--------------------------------------------------------------------------
+ PART 1 - ASK YOUR POWER PLATFORM ADMIN (once)
+--------------------------------------------------------------------------
+
+ [ ] Turn on code apps in the Prod environment:
+     admin.powerplatform.microsoft.com > Manage > Environments > (Prod)
+     > Settings > Product > Features > Power Apps code apps
+     > "Enable code apps" ON > Save
+ [ ] Give you the "Environment Maker" role in Prod.
+ [ ] Make sure the Prod data policy (DLP) allows SharePoint and
+     Office 365 Users together (both in the same group).
+
+
+--------------------------------------------------------------------------
+ PART 2 - IN THE BROWSER (make.powerapps.com)
+--------------------------------------------------------------------------
+
+1. Top right, switch the environment to PROD.
+
+2. Copy the Prod environment ID:
+   gear icon (top right) > Session details > "Environment ID"
+   (or from the address bar: .../environments/THIS-PART/...)
+
+3. Create the two connections IN PROD (connections don't move between
+   environments):
+   Connections > + New connection > SharePoint > Create
+   Connections > + New connection > Office 365 Users > Create
+
+
+--------------------------------------------------------------------------
+ PART 3 - FILL IN YOUR VALUES IN THIS FILE (Ctrl+H > Replace All)
+--------------------------------------------------------------------------
+
+   PASTE_PROD_ENVIRONMENT_ID   from Part 2, step 2
+   PASTE_SETTINGS_SITE_URL     same as in SETUP-STEPS (settings site)
+   PASTE_BAHRAIN_SITE_URL      same as in SETUP-STEPS (Bahrain site)
+   PASTE_PROD_SHAREPOINT_ID    from "pa connection list" (Part 4, step 2)
+   PASTE_PROD_OFFICE365_ID     from "pa connection list" (Part 4, step 2)
+
+The connection ids are NOT the same as in Dev. Use the new ones.
+
+
+--------------------------------------------------------------------------
+ PART 4 - COMMANDS (VS Code > Terminal > New Terminal > "Command Prompt")
+--------------------------------------------------------------------------
+
+Step 1 - Make a separate Prod copy of the app folder
+
+cd %USERPROFILE%\Documents
+set NODE_USE_SYSTEM_CA=1
+git clone https://github.com/Hujairy/MailRoom.git MailRoom-Prod
+cd MailRoom-Prod
+npm install
+pa app init --display-name "Mail Room" --environment-id "PASTE_PROD_ENVIRONMENT_ID"
+
+
+Step 2 - Find the Prod connection ids
+
+pa connection list
+
+   Copy the id on the "shared_sharepointonline" line  -> PASTE_PROD_SHAREPOINT_ID
+   Copy the id on the "shared_office365users" line    -> PASTE_PROD_OFFICE365_ID
+   If they're missing, the connections were made in Dev. Redo Part 2.
+   Now do Part 3 (Ctrl+H) if you haven't yet.
+
+
+Step 3 - Add the lists (one line at a time)
+
+pa app add data-source --connector "shared_sharepointonline" --connection-id "PASTE_PROD_SHAREPOINT_ID" --dataset "PASTE_SETTINGS_SITE_URL" --table "MailroomUnits"
+
+pa app add data-source --connector "shared_sharepointonline" --connection-id "PASTE_PROD_SHAREPOINT_ID" --dataset "PASTE_SETTINGS_SITE_URL" --table "MailroomMembers"
+
+pa app add data-source --connector "shared_sharepointonline" --connection-id "PASTE_PROD_SHAREPOINT_ID" --dataset "PASTE_BAHRAIN_SITE_URL" --table "BahrainPersonalMail"
+
+pa app add data-source --connector "shared_sharepointonline" --connection-id "PASTE_PROD_SHAREPOINT_ID" --dataset "PASTE_BAHRAIN_SITE_URL" --table "BahrainDepartmentMail"
+
+pa app add data-source --connector "shared_office365users" --connection-id "PASTE_PROD_OFFICE365_ID"
+
+   If you added more units (e.g. Egypt), add their two lists here too,
+   the same way as in SETUP-STEPS.
+
+
+Step 4 - Build and publish to Prod
+
+npm run build
+pa app push
+
+
+--------------------------------------------------------------------------
+ PART 5 - SWITCH USERS TO PROD
+--------------------------------------------------------------------------
+
+1. make.powerapps.com (PROD selected) > Apps > Mail Room > ... > Share
+   Add the users (or better, one group per unit). Each still needs a
+   Power Apps Premium license.
+2. Open the Prod app, check Settings shows your units and people.
+3. Send users the Prod app link:  Apps > Mail Room > ... > Details > Web link
+4. In DEV: Apps > Mail Room > ... > Share, remove the users, so everyone
+   uses Prod only.
+
+SharePoint access doesn't change: same lists, same permissions.
+
+
+--------------------------------------------------------------------------
+ LATER - PUBLISHING AN UPDATE
+--------------------------------------------------------------------------
+
+Test in Dev first (your MailRoom folder), then update Prod:
+
+cd %USERPROFILE%\Documents\MailRoom-Prod
+set NODE_USE_SYSTEM_CA=1
+git pull
+npm install
+npm run build
+pa app push
+
+Always run "pa app push" from the folder of the environment you mean:
+   MailRoom       -> Dev
+   MailRoom-Prod  -> Prod
+
+
+--------------------------------------------------------------------------
+ GOOD TO KNOW
+--------------------------------------------------------------------------
+
+ - Dev and Prod use the same SharePoint lists, so anything you do in the
+   Dev app changes real data. For safe testing later, create test lists
+   (e.g. a "Mail Room Test" site) and point only the Dev app at them.
+ - If IT requires managed solutions and Power Platform Pipelines for
+   Prod, this is a different process: both environments need Dataverse,
+   the app goes into a solution (pa app push --solution-id), data
+   sources use connection references, and IT deploys it with Pipelines.
