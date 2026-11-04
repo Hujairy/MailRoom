@@ -1,0 +1,187 @@
+==========================================================================
+ MAIL ROOM IN SHAREPOINT (SPFx) - SETUP STEPS
+ A SharePoint web part. No Power Apps licence, no app registration,
+ no hosting. Same SharePoint lists, same data.
+ Open this file in Notepad. Follow the parts in order.
+==========================================================================
+
+How it works:
+ - Mail Room becomes a web part you put on a SharePoint page.
+ - People are already signed in to SharePoint, so there's no sign-in.
+ - It reads and writes the SAME SharePoint lists, as the person using it,
+   so SharePoint permissions still keep units apart.
+
+You build one file on your laptop (mail-room.sppkg). A SharePoint admin
+uploads it once (Part 4). Your laptop's Node 24 is fine for this.
+
+
+--------------------------------------------------------------------------
+ PART 1 - INSTALL THE SHAREPOINT TOOLS (once)
+--------------------------------------------------------------------------
+
+VS Code > Terminal > New Terminal > "Command Prompt":
+
+set NODE_USE_SYSTEM_CA=1
+npm install -g yo @microsoft/generator-sharepoint@1.24.1
+
+Then close VS Code completely and open it again (so "yo" is found).
+
+
+--------------------------------------------------------------------------
+ PART 2 - CREATE THE SHAREPOINT PROJECT (once)
+--------------------------------------------------------------------------
+
+set NODE_USE_SYSTEM_CA=1
+cd %USERPROFILE%\Documents
+yo @microsoft/sharepoint
+
+It asks some questions. Answer exactly:
+
+   What is your solution name?                       mail-room
+   Where do you want to place the files?  (if asked) Create a subfolder with solution name
+   Which type of client-side component to create?    WebPart
+   What is your Web part name?                       MailRoom
+   Which template would you like to use?             React
+
+If it asks to "help improve Yo" or send usage data, choose No.
+It then installs packages. This takes several minutes. Wait for it to
+finish and show the prompt again.
+
+You now have the folder:  Documents\mail-room
+
+
+--------------------------------------------------------------------------
+ PART 3 - PUT MAIL ROOM IN IT AND BUILD THE PACKAGE
+--------------------------------------------------------------------------
+
+set NODE_USE_SYSTEM_CA=1
+cd %USERPROFILE%\Documents\MailRoom
+git pull
+cd %USERPROFILE%\Documents\mail-room
+node %USERPROFILE%\Documents\MailRoom\spfx\install.mjs
+npm install
+npm run build
+
+The package is now here:
+   Documents\mail-room\sharepoint\solution\mail-room.sppkg
+
+Warnings during "npm run build" are fine. If it ends with an error, send
+me a screenshot of the last lines.
+
+
+--------------------------------------------------------------------------
+ PART 4 - INSTALL IT IN SHAREPOINT (SharePoint admin, once per version)
+--------------------------------------------------------------------------
+
+Send this to IT with the mail-room.sppkg file:
+
+  Please add our Mail Room web part (mail-room.sppkg) to the tenant
+  App Catalog: SharePoint admin center > More features > Apps > Open >
+  Upload > choose the file > "Only enable this app" > Enable.
+  It uses only the SharePoint REST API as the signed-in user. It needs no
+  API permissions and no Microsoft Graph access.
+  Then please add the app to this site:
+     PASTE_SETTINGS_SITE_URL
+  (Site > Settings gear > Add an app > Mail Room.)
+
+If IT prefers, they can choose "Enable this app and add it to all sites"
+instead. Then the second step isn't needed.
+
+
+--------------------------------------------------------------------------
+ PART 5 - ADD MAIL ROOM TO A PAGE (you, once)
+--------------------------------------------------------------------------
+
+On the Mail Room Settings site (the one with MailroomUnits and
+MailroomMembers):
+
+1. + New > Page > Blank. Title it "Mail Room".
+2. Hover under the title > (+) > Section layout > "Full-width section".
+3. In that section click (+) > search "Mail Room" > add it.
+4. (Optional) click the web part's pencil icon:
+     Settings site   - leave empty (it uses this site)
+     General admins  - one email per line. Empty means:
+                       hawra.alhujairy@bank-abc.com
+   Click Apply.
+5. Publish. Copy the page address and send it to people.
+
+Tip: you can also make it a whole-page app:
+   Site contents > Site Pages > + New > App > Mail Room.
+
+
+--------------------------------------------------------------------------
+ PART 6 - FIRST TIME ON THE PAGE (as general admin)
+--------------------------------------------------------------------------
+
+Your existing units, people and deliveries are already there.
+
+1. Go to Settings. You'll see "All units use the settings site".
+   Click "Add it for me". (It adds a SiteUrl column to MailroomUnits.)
+2. Click Bahrain > the pencil next to "SharePoint site" > paste the
+   Bahrain site address > Save. Bahrain should turn "Ready".
+   (If your Bahrain lists are on the settings site, skip this.)
+
+Adding a new unit from now on (no rebuild, no commands):
+   Settings > New unit > name + its SharePoint site > Add unit >
+   "Create them for me" > add its people.
+   Give the unit's people Edit access to that site.
+
+
+--------------------------------------------------------------------------
+ WHAT EACH PERSON NEEDS
+--------------------------------------------------------------------------
+
+ [ ] Added in Settings (User or Admin, in their unit)
+ [ ] Read access to the settings site (where the page is)
+ [ ] Edit access to their unit's site
+ No Power Apps licence, no app sharing.
+
+
+--------------------------------------------------------------------------
+ PUBLISHING AN UPDATE LATER
+--------------------------------------------------------------------------
+
+set NODE_USE_SYSTEM_CA=1
+cd %USERPROFILE%\Documents\MailRoom
+git pull
+cd %USERPROFILE%\Documents\mail-room
+node %USERPROFILE%\Documents\MailRoom\spfx\install.mjs
+npm install
+npm run build
+
+Then IT uploads the new mail-room.sppkg to the App Catalog again
+(it replaces the old one; the version number goes up by itself).
+
+
+--------------------------------------------------------------------------
+ IF SOMETHING GOES WRONG
+--------------------------------------------------------------------------
+
+"'yo' is not recognized"
+   -> close VS Code completely and open it again. If still not found:
+      npx -p yo -p @microsoft/generator-sharepoint@1.24.1 -- yo @microsoft/sharepoint
+
+npm errors with SELF_SIGNED_CERT_IN_CHAIN
+   -> run  set NODE_USE_SYSTEM_CA=1  first.
+
+"This isn't a SharePoint Framework web part project"
+   -> run install.mjs from inside Documents\mail-room.
+
+Mail Room isn't in the web part list on the page
+   -> the app isn't added to this site yet (Part 4), or wait a few
+      minutes after IT enabled it and reload the page.
+
+"You don't have access to Mail Room yet"
+   -> the person needs Read access to the settings site.
+
+"You don't have access to a mail room yet"
+   -> add them in Settings.
+
+"You can't open the Bahrain mail room yet"
+   -> give them Edit access to the Bahrain site.
+
+A unit shows "Lists not created" or "Can't open its site"
+   -> check its SharePoint site address in Settings (pencil icon).
+
+"Create them for me" says you don't have permission
+   -> you need to be an owner of that site, or create the lists by hand.

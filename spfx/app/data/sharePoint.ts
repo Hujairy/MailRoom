@@ -1,0 +1,296 @@
+/* eslint-disable */
+import { DEPARTMENT_MAIL_LIST, PERSONAL_MAIL_LIST, unitListNames } from '../config';
+import {
+  createItem,
+  findList,
+  getItem,
+  getItems,
+  isDenied,
+  isNotFound,
+  odata,
+  resolveSite,
+  updateItem,
+  type ListRef,
+  type Row,
+} from './rest';
+import { byNewest, onBehalfFor } from './rules';
+import type {
+  CurrentUser,
+  MailChanges,
+  MailItem,
+  MailKind,
+  MailQuery,
+  MailRepository,
+  NewMailInput,
+  Person,
+} from './types';
+
+const P = PERSONAL_MAIL_LIST.columns;
+const D = DEPARTMENT_MAIL_LIST.columns;
+const SELECT = {
+  Personal: Object.values(P).filter((c) => c !== 'ID' && c !== 'Author'),
+  Department: Object.values(D).filter((c) => c !== 'ID' && c !== 'Author'),
+};
+
+/** Why a unit can't be opened. */
+export type UnitProblem = 'no-site-access' | 'lists-missing';
+
+/** Whether a unit can be opened; when not, why, and which lists are missing. */
+export interface UnitCheck {
+  ok: boolean;
+  problem?: UnitProblem;
+  missing: string[];
+  error?: string;
+}
+
+/**
+ * One unit's deliveries, in its Personal Mail and Department Mail lists on the
+ * unit's SharePoint site. Columns are plain text (Received is "Yes"/"No")
+ * plus the Received Time Stamp date.
+ */
+export class SharePointRepository implements MailRepository {
+  readonly unit: string;
+  readonly siteUrl: string;
+  private lists: Promise<{ Personal: ListRef; Department: ListRef }> | null = null;
+
+  constructor(unit: string, siteUrl: string) {
+    this.unit = unit;
+    this.siteUrl = siteUrl;
+  }
+
+  /** Checks the person can open the unit's site and both lists exist there. */
+  async check(): Promise<UnitCheck> {
+    const names = unitListNames(this.unit);
+    try {
+      const site = await resolveSite(this.siteUrl);
+      const [personal, department] = await Promise.all([findList(site, names.personal), findList(site, names.department)]);
+      if (!personal || !department) {
+        return {
+          ok: false,
+          problem: 'lists-missing',
+          missing: [!personal && names.personal, !department && names.department].filter((n): n is string => !!n),
+        };
+      }
+      // Reading one item proves the person can open the list, not just see it exists.
+      await getItems(department, { select: ['Title'], top: 1 });
+      this.lists = Promise.resolve({ Personal: personal, Department: department });
+      return { ok: true, missing: [] };
+    } catch (e) {
+      if (isDenied(e) || isNotFound(e)) return { ok: false, problem: 'no-site-access', missing: [], error: e instanceof Error ? e.message : String(e) };
+      throw e;
+    }
+  }
+
+  async list(query: MailQuery, top: number): Promise<MailItem[]> {
+    const kinds: MailKind[] = query.kind ? [query.kind] : ['Personal', 'Department'];
+    const results = await Promise.all(kinds.map((kind) => this.listOne(kind, query, top)));
+    return results.flat().sort(byNewest).slice(0, top);
+  }
+
+  async create(input: NewMailInput, user: CurrentUser): Promise<MailItem> {
+    void user; // Created By is filled in by SharePoint.
+    const record: Row =
+      input.kind === 'Personal'
+        ? {
+            [P.courierNumber]: input.courierNumber.trim(),
+            [P.courierCompany]: input.courierCompany.trim(),
+            [P.sender]: input.sender.trim(),
+            [P.recipient]: input.recipient.trim(),
+            [P.recipientEmail]: input.recipientEmail.trim().toLowerCase(),
+            [P.received]: 'No',
+          }
+        : {
+            [D.courierNumber]: input.courierNumber.trim(),
+            [D.courierCompany]: input.courierCompany.trim(),
+            [D.department]: input.department.trim(),
+            [D.senderCompany]: input.sender.trim(),
+            [D.received]: 'No',
+          };
+    const created = await withAction('Submitting the delivery', async () => createItem(await this.listFor(input.kind), record));
+    return this.toItem(input.kind, { [P.created]: new Date().toISOString(), ...record, ...created });
+  }
+
+  async update(item: MailItem, changes: MailChanges): Promise<MailItem> {
+    const record: Row = {};
+    const set = (column: string, value: string | undefined, lower = false) => {
+      if (value !== undefined) record[column] = lower ? value.trim().toLowerCase() : value.trim();
+    };
+    if (item.kind === 'Personal') {
+      set(P.courierNumber, changes.courierNumber);
+      set(P.courierCompany, changes.courierCompany);
+      set(P.sender, changes.sender);
+      set(P.recipient, changes.recipient);
+      set(P.recipientEmail, changes.recipientEmail, true);
+      set(P.onBehalf, changes.onBehalf);
+    } else {
+      set(D.courierNumber, changes.courierNumber);
+      set(D.courierCompany, changes.courierCompany);
+      set(D.senderCompany, changes.sender);
+      set(D.department, changes.department);
+    }
+    const current = await this.getOne(item);
+    return this.patch(current, record, 'Saving changes');
+  }
+
+  async receive(item: MailItem, receivedBy: Person): Promise<MailItem> {
+    // Re-read first so two people can't receive the same delivery.
+    const current = await this.getOne(item);
+    if (current.status === 'Received') {
+      throw new Error(`Already received by ${current.receivedBy || 'someone else'}.`);
+    }
+    const c = item.kind === 'Personal' ? P : D;
+    const record: Row = {
+      [c.received]: 'Yes',
+      [c.receivedBy]: receivedBy.name,
+      [c.receivedByEmail]: receivedBy.email.toLowerCase(),
+      [c.receivedTimeStamp]: new Date().toISOString(),
+    };
+    if (item.kind === 'Personal') record[P.onBehalf] = onBehalfFor(current, receivedBy);
+    return this.patch(current, record, 'Saving the receipt');
+  }
+
+  async reopen(item: MailItem): Promise<MailItem> {
+    const current = await this.getOne(item);
+    const c = item.kind === 'Personal' ? P : D;
+    const record: Row = {
+      [c.received]: 'No',
+      [c.receivedBy]: '',
+      [c.receivedByEmail]: '',
+      [c.receivedTimeStamp]: null,
+    };
+    if (item.kind === 'Personal') record[P.onBehalf] = '';
+    return this.patch(current, record, 'Reopening the delivery');
+  }
+
+  private listFor(kind: MailKind): Promise<ListRef> {
+    if (!this.lists) {
+      const names = unitListNames(this.unit);
+      this.lists = (async () => {
+        const site = await resolveSite(this.siteUrl);
+        const [personal, department] = await Promise.all([findList(site, names.personal), findList(site, names.department)]);
+        if (!personal || !department) throw new Error(`The ${this.unit} lists aren’t on its SharePoint site.`);
+        return { Personal: personal, Department: department };
+      })();
+      this.lists.catch(() => {
+        this.lists = null;
+      });
+    }
+    return this.lists.then((l) => l[kind]);
+  }
+
+  private async listOne(kind: MailKind, query: MailQuery, top: number): Promise<MailItem[]> {
+    const c = kind === 'Personal' ? P : D;
+    const clauses: string[] = [];
+    if (query.status) clauses.push(`${c.received} eq ${odata(query.status === 'Received' ? 'Yes' : 'No')}`);
+    if (query.recipientEmail) {
+      if (kind !== 'Personal') return [];
+      const emails = [...new Set((Array.isArray(query.recipientEmail) ? query.recipientEmail : [query.recipientEmail]).map((e) => e.trim().toLowerCase()))].filter(Boolean);
+      if (emails.length === 0) return [];
+      const match = emails.map((e) => `${P.recipientEmail} eq ${odata(e)}`);
+      clauses.push(match.length === 1 ? match[0] : `(${match.join(' or ')})`);
+    }
+    const rows = await withAction(kind === 'Personal' ? 'Loading personal mail' : 'Loading department mail', async () =>
+      getItems(await this.listFor(kind), {
+        filter: clauses.length ? clauses.join(' and ') : undefined,
+        select: SELECT[kind],
+        top,
+        newestFirst: true,
+      }),
+    );
+    return rows.map((row) => this.toItem(kind, row));
+  }
+
+  private async getOne(item: MailItem): Promise<MailItem> {
+    const row = await withAction('Loading the delivery', async () => getItem(await this.listFor(item.kind), item.id));
+    if (!row) throw new Error('This delivery no longer exists.');
+    return this.toItem(item.kind, row);
+  }
+
+  private async patch(current: MailItem, record: Row, action: string): Promise<MailItem> {
+    const updated = await withAction(action, async () => updateItem(await this.listFor(current.kind), current.id, record));
+    return this.toItem(current.kind, { ...fromItem(current), ...updated, Author: current.createdBy });
+  }
+
+  private toItem(kind: MailKind, row: Row): MailItem {
+    return { ...toItem(kind, row), unit: this.unit };
+  }
+}
+
+async function withAction<T>(action: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    throw new Error(`${action} failed: ${message}`);
+  }
+}
+
+/** Reads a column as text; tolerates Choice `{ Value }` and Person `{ DisplayName, Email }` objects. */
+function text(row: Row, column: string): string {
+  const value = row[column];
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'object') {
+    const v = value as Record<string, unknown>;
+    for (const key of ['Value', 'DisplayName', 'Email']) {
+      if (typeof v[key] === 'string') return v[key] as string;
+    }
+  }
+  return '';
+}
+
+function isYes(value: string): boolean {
+  return ['yes', 'true', '1'].includes(value.trim().toLowerCase());
+}
+
+function toItem(kind: MailKind, row: Row): MailItem {
+  const c = kind === 'Personal' ? P : D;
+  const created = text(row, c.created) || new Date().toISOString();
+  return {
+    id: text(row, c.id) || text(row, 'Id'),
+    kind,
+    unit: '',
+    courierNumber: text(row, c.courierNumber),
+    courierCompany: text(row, c.courierCompany),
+    sender: kind === 'Personal' ? text(row, P.sender) : text(row, D.senderCompany),
+    recipient: kind === 'Personal' ? text(row, P.recipient) : '',
+    recipientEmail: kind === 'Personal' ? text(row, P.recipientEmail).toLowerCase() : '',
+    onBehalf: kind === 'Personal' ? text(row, P.onBehalf) : '',
+    department: kind === 'Department' ? text(row, D.department) : '',
+    status: isYes(text(row, c.received)) ? 'Received' : 'Waiting',
+    receivedBy: text(row, c.receivedBy),
+    receivedByEmail: text(row, c.receivedByEmail).toLowerCase(),
+    receivedTimeStamp: text(row, c.receivedTimeStamp) || null,
+    createdBy: text(row, c.createdBy),
+    created,
+    modified: text(row, c.modified) || created,
+  };
+}
+
+function fromItem(item: MailItem): Row {
+  const c = item.kind === 'Personal' ? P : D;
+  const row: Row = {
+    [c.id]: item.id,
+    [c.courierNumber]: item.courierNumber,
+    [c.courierCompany]: item.courierCompany,
+    [c.received]: item.status === 'Received' ? 'Yes' : 'No',
+    [c.receivedBy]: item.receivedBy,
+    [c.receivedByEmail]: item.receivedByEmail,
+    [c.receivedTimeStamp]: item.receivedTimeStamp,
+    [c.createdBy]: item.createdBy,
+    [c.created]: item.created,
+    [c.modified]: item.modified,
+  };
+  if (item.kind === 'Personal') {
+    row[P.sender] = item.sender;
+    row[P.recipient] = item.recipient;
+    row[P.recipientEmail] = item.recipientEmail;
+    row[P.onBehalf] = item.onBehalf;
+  } else {
+    row[D.senderCompany] = item.sender;
+    row[D.department] = item.department;
+  }
+  return row;
+}
