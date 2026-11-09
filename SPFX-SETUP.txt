@@ -50,14 +50,20 @@ Then close VS Code completely and open it again (so "yo" is found).
  PART 2 - CREATE THE SHAREPOINT PROJECT (once)
 --------------------------------------------------------------------------
 
+Run it in its OWN new folder, never inside the MailRoom folder (it would
+mix its files with the app's):
+
 set NODE_USE_SYSTEM_CA=1
 cd %USERPROFILE%\Documents
+mkdir mail-room
+cd mail-room
 yo @microsoft/sharepoint
 
+Check the line before you press Enter ends with  Documents\mail-room>
 It asks some questions. Answer exactly:
 
    What is your solution name?                       mail-room
-   Where do you want to place the files?  (if asked) Create a subfolder with solution name
+   Where do you want to place the files?  (if asked) Use the current folder
    Which type of client-side component to create?    WebPart
    What is your Web part name?                       MailRoom
    Which template would you like to use?             React
@@ -178,6 +184,20 @@ Choose "Replace it" if asked.
 --------------------------------------------------------------------------
  IF SOMETHING GOES WRONG
 --------------------------------------------------------------------------
+
+The generator ran inside the MailRoom folder by mistake
+("git pull" says README.md would be overwritten, and there's no mail-room
+folder). Clean MailRoom up, then do Part 2 again:
+
+cd %USERPROFILE%\Documents\MailRoom
+git restore .gitignore README.md eslint.config.js package.json tsconfig.json
+rmdir /s /q config src\webparts teams .vscode
+del .npmignore .yo-rc.json package-lock.json
+git pull
+npm install
+
+(This keeps power.config.json, .power and src\generated, which the Power
+Apps version needs.)
 
 "npm.ps1 cannot be loaded because running scripts is disabled"
    -> you're in PowerShell. Switch to Command Prompt (Part 0).
