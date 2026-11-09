@@ -1,0 +1,97 @@
+==========================================================================
+ MAIL ROOM SPFx - WHAT TO DO NOW (9 Nov)
+ Copy each block into the VS Code terminal (Command Prompt, not "PS").
+==========================================================================
+
+
+--------------------------------------------------------------------------
+ STEP 1 - CLEAN UP THE MAILROOM FOLDER
+ (the SharePoint generator put its files there by mistake)
+--------------------------------------------------------------------------
+
+set NODE_USE_SYSTEM_CA=1
+cd %USERPROFILE%\Documents\MailRoom
+git restore .gitignore README.md eslint.config.js package.json tsconfig.json
+rmdir /s /q config src\webparts teams .vscode
+del .npmignore .yo-rc.json package-lock.json
+git pull
+npm install
+
+"git pull" should now work. This keeps power.config.json, .power and
+src\generated (the Power Apps version needs them). Leave the
+MailRoom-Prod folder as it is.
+
+
+--------------------------------------------------------------------------
+ STEP 2 - CREATE THE SHAREPOINT PROJECT IN ITS OWN FOLDER
+--------------------------------------------------------------------------
+
+cd %USERPROFILE%\Documents
+mkdir mail-room
+cd mail-room
+
+Check the line now ends with  Documents\mail-room>  then run:
+
+yo @microsoft/sharepoint
+
+Answer exactly:
+
+   What is your solution name?                       mail-room
+   Where do you want to place the files?  (if asked) Use the current folder
+   Which type of client-side component to create?    WebPart
+   What is your Web part name?                       MailRoom
+   Which template would you like to use?             React
+
+Answer No to any question about usage data. Wait until it finishes
+(several minutes) and the prompt comes back.
+
+
+--------------------------------------------------------------------------
+ STEP 3 - PUT MAIL ROOM IN AND BUILD THE PACKAGE
+--------------------------------------------------------------------------
+
+node %USERPROFILE%\Documents\MailRoom\spfx\install.mjs
+npm install
+npm run build
+
+The package is then:
+   Documents\mail-room\sharepoint\solution\mail-room.sppkg
+
+Warnings are fine. If it ends with an error, send a screenshot of the
+last lines.
+
+
+--------------------------------------------------------------------------
+ STEP 4 - UPLOAD TO THE APP CATALOG
+--------------------------------------------------------------------------
+
+1. SharePoint admin center > More features > Apps > Open.
+2. Upload > choose mail-room.sppkg.
+3. Choose "Only enable this app" > Enable.
+4. Open the Mail Room Settings site (with MailroomUnits and
+   MailroomMembers) > gear icon > Add an app > Mail Room.
+
+
+--------------------------------------------------------------------------
+ STEP 5 - PUT IT ON A PAGE
+--------------------------------------------------------------------------
+
+On the Mail Room Settings site:
+1. + New > Page > Blank. Title: Mail Room.
+2. (+) > Section layout > Full-width section.
+3. In that section: (+) > search "Mail Room" > add it.
+   Not in the list? Wait a few minutes and reload.
+4. Publish. Copy the page address.
+
+
+--------------------------------------------------------------------------
+ STEP 6 - FIRST TIME ON THE PAGE
+--------------------------------------------------------------------------
+
+1. Settings > "Add it for me" (adds the SiteUrl column).
+2. Bahrain > pencil next to "SharePoint site" > paste the Bahrain site
+   address > Save. It should show "Ready".
+3. Each person needs: added in Settings, Read on the settings site,
+   Edit on their unit's site. Then send them the page address.
+
+Full guide and troubleshooting: SPFX-SETUP.txt
