@@ -19,11 +19,26 @@ export interface IMailRoomWebPartProps {
 /** Mail Room as a SharePoint web part. Put it on a full-width section, or on an app page. */
 export default class MailRoomWebPart extends BaseClientSideWebPart<IMailRoomWebPartProps> {
   private root: Root | undefined;
+  private timers: number[] = [];
 
   protected onInit(): Promise<void> {
     injectStyles();
+    window.addEventListener('resize', this.fit);
     return super.onInit();
   }
+
+  /**
+   * Makes Mail Room at least as tall as the window below where it starts, so
+   * it fills the page instead of stopping after its content.
+   */
+  private fit = (): void => {
+    const root = this.domElement.firstElementChild as HTMLElement | null;
+    if (!root) return;
+    const scroller = scrollParent(this.domElement);
+    const scrolled = scroller ? scroller.scrollTop : window.scrollY;
+    const top = root.getBoundingClientRect().top + scrolled;
+    root.style.minHeight = `${Math.max(420, Math.floor(window.innerHeight - top))}px`;
+  };
 
   public render(): void {
     const { pageContext, spHttpClient } = this.context;
@@ -45,9 +60,14 @@ export default class MailRoomWebPart extends BaseClientSideWebPart<IMailRoomWebP
     this.root.render(
       React.createElement('div', { className: 'mailroom-root' }, React.createElement(App, { key: JSON.stringify(config) })),
     );
+    // SharePoint finishes laying out the page (header, command bar) after the web part renders.
+    this.timers.forEach((t) => window.clearTimeout(t));
+    this.timers = [0, 300, 1000, 2500].map((ms) => window.setTimeout(this.fit, ms));
   }
 
   protected onDispose(): void {
+    window.removeEventListener('resize', this.fit);
+    this.timers.forEach((t) => window.clearTimeout(t));
     this.root?.unmount();
     this.root = undefined;
   }
@@ -100,6 +120,15 @@ export default class MailRoomWebPart extends BaseClientSideWebPart<IMailRoomWebP
       generalAdmins: admins.length > 0 ? admins : DEFAULT_GENERAL_ADMINS,
     };
   }
+}
+
+/** The element SharePoint scrolls the page in (it isn't the window). */
+function scrollParent(element: HTMLElement): HTMLElement | null {
+  for (let el = element.parentElement; el; el = el.parentElement) {
+    const overflow = getComputedStyle(el).overflowY;
+    if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) return el;
+  }
+  return null;
 }
 
 /** Adds Mail Room's styles to the page once. They're all scoped under .mailroom-root. */
