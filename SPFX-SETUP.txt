@@ -194,7 +194,7 @@ npm errors with SELF_SIGNED_CERT_IN_CHAIN
 
 Mail Room isn't in the web part list on the page
    -> the app isn't added to this site yet (Part 4), or wait a few
-      minutes after IT enabled it and reload the page.
+      minutes after Part 4 and reload the page.
 
 "You don't have access to Mail Room yet"
    -> the person needs Read access to the settings site.
