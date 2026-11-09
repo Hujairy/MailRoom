@@ -1,0 +1,180 @@
+==========================================================================
+ PROMPT FOR A NEW SHAREPOINT APP (like Mail Room)
+ 1. Fill in PART A (your requirements). Keep the rest as it is.
+ 2. Copy everything from "START OF PROMPT" to "END OF PROMPT" into a new
+    Claude conversation, and attach screenshots if you have them.
+==========================================================================
+
+----------------------------- START OF PROMPT -----------------------------
+
+Build me a new SharePoint app for Bank ABC as a SharePoint Framework (SPFx)
+web part, the same way as my Mail Room app. Mail Room is the reference
+implementation, in the public repo https://github.com/Hujairy/MailRoom
+(the "spfx" folder, plus SPFX-SETUP.txt). Read it first and reuse its
+structure, code and patterns wherever they fit, so the new app works the
+same way and deploys the same way.
+
+==========================================================================
+ PART A - WHAT THE NEW APP DOES  (I fill this in)
+==========================================================================
+
+App name:                 [e.g. Asset Requests]
+One-line purpose:         [what it's for and who uses it]
+New GitHub repository:    [owner/name - I'll create it and give you access]
+
+Who uses it, and roles:   [e.g. Users, Admins per unit/department,
+                           General admins. Or: no roles]
+Units / departments:      [Separate data per unit like Mail Room? yes/no]
+
+Screens and what each does:
+   [1. ...]
+   [2. ...]
+
+Data (SharePoint lists, columns, which are required, any choices):
+   [List: ... columns: ...]
+
+Notifications / emails:   [none, or what should be sent and to whom]
+
+Existing system to copy (if any):   [screenshots attached? which fields?]
+
+Look and feel:            [Bank ABC brand like Mail Room, or changes]
+
+Anything else:            [...]
+
+==========================================================================
+ PART B - MY SITUATION (constraints that must be respected)
+==========================================================================
+
+- I'm not a developer. I work on a locked-down Bank ABC Windows laptop
+  with VS Code, Git and Node.js 24 (24.22). I can install npm packages
+  globally.
+- Always give me commands for the "Command Prompt" terminal, never
+  PowerShell (npm.ps1 is blocked by the execution policy).
+- The bank inspects HTTPS. Every command block starts with
+  set NODE_USE_SYSTEM_CA=1 . If npm still fails with
+  SELF_SIGNED_CERT_IN_CHAIN, try set NODE_OPTIONS=--use-system-ca , then
+  NODE_EXTRA_CA_CERTS with the bank's root certificate. Never suggest
+  turning off certificate checks (strict-ssl false).
+- I'm a SharePoint Administrator: I can upload packages to the tenant App
+  Catalog myself and add apps to sites.
+- No Power Apps premium licences for users, no Entra ID app registrations,
+  no Microsoft Graph permissions that need admin consent, no external
+  hosting. Everything runs inside SharePoint as the signed-in user.
+- Your workspace can't download npm packages, so you can't run the real
+  SPFx build. Make the code robust, test what you can with stand-ins, and
+  tell me plainly what hasn't been tested for real.
+- I copy commands from Notepad files you push to GitHub. Put every set of
+  steps in a .txt file (Windows line endings) in the repo, with the raw
+  link, step by step, with the exact answers for every generator question.
+
+==========================================================================
+ PART C - HOW TO BUILD IT (what worked for Mail Room)
+==========================================================================
+
+Project and install script
+- SPFx 1.24.1 or later (React 18, Node 22/24/26, Heft toolchain), web part,
+  React template.
+- I create the project myself with the generator, in its OWN new folder,
+  never inside the app's git folder:
+     cd %USERPROFILE%\Documents  >  mkdir <app-folder>  >  cd <app-folder>
+     yo @microsoft/sharepoint  ("Use the current folder", WebPart, React)
+- The repo has an "spfx" folder with app/, the <Name>WebPart.ts entry,
+  tools/, and an install.mjs that I run from the generated project. Like
+  Mail Room's install.mjs, it must: find the web part folder; copy app/
+  into src/webparts/<name>/app; replace the generated WebPart.ts; remove
+  the sample components folder; add missing dependencies
+  (@microsoft/sp-http, sp-property-pane, sp-core-library at the project's
+  SPFx version, react/react-dom 18.3.1); patch tsconfig.json (lib es2020,
+  dom, dom.iterable; downlevelIteration only when the target is ES5;
+  skipLibCheck), reading JSON with comments; patch the manifest (title,
+  description, icon, supportsFullBleed, SharePointFullPage and TeamsTab
+  hosts, default properties); patch config/package-solution.json (name,
+  skipFeatureDeployment true, version +1 on every run). Safe to re-run.
+- Build: npm install, then npm run build. The package is
+  sharepoint\solution\<name>.sppkg. Tell me to ignore "npm audit"
+  warnings and never run npm audit fix --force.
+
+Code rules (so it compiles in any SPFx setup)
+- /* eslint-disable */ at the top of every file.
+- import * as React from 'react' in every .tsx file (classic JSX).
+- Must compile with strict on AND with strictNullChecks off: avoid
+  narrowing on boolean literal unions, use explicit generics where
+  inference fails, annotate callbacks that would return an implicit any.
+- React 18: createRoot in render(), root.unmount() in onDispose().
+- No CSS/SCSS or image loaders: write a normal stylesheet, generate a TS
+  module from it (like tools/scope-css.py) with every rule scoped under the
+  app's root class, keyframes prefixed, dark mode removed, then inject one
+  <style> tag. Images inlined as base64 in a TS module. Check nothing leaks
+  into the SharePoint page.
+- The web part fills the window below where it starts (min-height,
+  recomputed on resize and after SharePoint's layout settles), and works
+  in a full-width section and on an app page.
+
+Data (SharePoint REST through SPHttpClient, no Graph)
+- Reads: Accept application/json;odata=nometadata, 'odata-version': '',
+  $select, $expand=Author, $filter, $orderby=Created desc, $top, follow
+  odata.nextLink.
+- Writes: odata=verbose with __metadata.type = the list's
+  ListItemEntityTypeFullName; updates and deletes as POST with
+  X-HTTP-Method MERGE/DELETE and IF-MATCH *; read the item back after.
+- Sites are addressed by absolute URL, so one app can use lists on several
+  sites. Find lists by title or URL name, ignoring spaces and case.
+- Current user from pageContext (display name, email, login name). Match
+  people by email OR login name, case-insensitive. Department from
+  SP.UserProfiles.PeopleManager/GetMyProperties.
+- People search through SharePoint's clientPeoplePickerSearchUser (no
+  extra permissions).
+- Handle 403/404 as "no access", retry on 429/503 with Retry-After.
+
+Lists
+- Column internal names without spaces (the app uses internal names).
+  Yes/No values stored as text, dates as Date and time with time, the
+  built-in Title column reused for the main identifier.
+- The app can create its own lists and columns for admins
+  ("Create them for me": web/lists with BaseTemplate 100, then
+  fields/CreateFieldAsXml with Options 24). Also show the exact list names
+  and columns for creating them by hand.
+
+Roles, units and settings (reuse Mail Room's model if roles are needed)
+- Settings lists on a settings site (everyone Read, only general admins
+  Edit): Units (Title, SiteUrl) and Members (Title = email, MemberName,
+  Unit, Role = Admin/User).
+- Each unit's data in its own lists (named <Unit>... without spaces) on
+  its own site; SharePoint permissions keep units apart, and the app only
+  opens units the person is a member of.
+- General admins come from a web part property (multi-line emails), with
+  a default list in config.ts. Only they see Settings.
+- Pages someone can't use don't exist for them: no navigation, no tiles,
+  and a direct link opens Home instead.
+- Clear screens for every state: loading, settings lists missing (with
+  "Create them for me"), can't read settings, not in any unit, in a unit
+  but no site access, unit lists not created. Settings shows each unit's
+  status (Ready / Lists not created / Can't open its site), its site
+  (editable), people with role toggles, and the general admins.
+
+Design
+- Bank ABC brand like Mail Room: wordmark and square tile logo, colours
+  cyan #009CBD, blue #007096, deep blue #005670, grey #53565A, stone
+  #DFDAD6, Segoe UI. Modern and calm, with tasteful animations (respect
+  reduced motion), responsive down to a phone, accessible (labels, focus,
+  keyboard, aria-live for updates).
+
+Testing before you push
+- Typecheck with SPFx-like settings, strict and non-strict, and with
+  noUnusedLocals.
+- Run install.mjs on a mock generated project (manifest and tsconfig with
+  comments) and check what it changed.
+- Browser-test the bundle with stand-in sp-* modules and a fake SharePoint
+  REST API: every role, every setup state, creating lists, phone width,
+  and that the styles don't leak.
+
+What to give me
+- The code in the new repo, a README, and Notepad files: SETUP (tools,
+  project, install, build, upload "Only enable this app", add the app to
+  the site, page with a full-width section or an app page, first run,
+  what each person needs, updating later, troubleshooting), plus a short
+  NEXT-STEPS file whenever we're in the middle of something.
+- Keep replies short. Tell me what's done, what I do next, and what's
+  untested.
+
+------------------------------ END OF PROMPT ------------------------------
