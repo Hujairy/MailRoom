@@ -553,6 +553,39 @@ textarea {
   margin: 12px 0 28px;
 }
 
+/* A picture across the top of a page (My Personal Mail, Department Mail, Add Mail). */
+.page-banner {
+  margin: 4px 0 22px;
+  overflow: hidden;
+  border-radius: var(--r-l);
+  background: #0b1118;
+  box-shadow: 0 10px 30px rgba(2, 23, 44, 0.14);
+}
+
+.page-banner img {
+  display: block;
+  width: 100%;
+  height: auto;
+  animation: banner-in 0.9s var(--ease-out) both;
+}
+
+.page-banner.is-crop img {
+  height: clamp(150px, 19vw, 240px);
+  object-fit: cover;
+  object-position: center 40%;
+}
+
+@keyframes banner-in {
+  from {
+    opacity: 0.4;
+    transform: scale(1.04);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* Home banner: the greeting over the mail room picture. */
 .hero {
   position: relative;

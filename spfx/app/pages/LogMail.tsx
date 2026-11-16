@@ -9,6 +9,8 @@ import { useAsync } from '../lib/useAsync';
 import { ScanIcon } from '../components/icons';
 import { CourierPicker } from '../components/CourierPicker';
 import { PageHead } from '../components/PageHead';
+import { PageBanner } from '../components/PageBanner';
+import { addMailBannerUrl } from '../assets';
 import { PeoplePicker } from '../components/PeoplePicker';
 import { Segmented } from '../components/Segmented';
 import { Slip } from '../components/Slip';
@@ -160,6 +162,7 @@ export function LogMail({ session, unit, repo, addKind, go, notify }: PageProps)
 
   return (
     <div className="page">
+      <PageBanner src={addMailBannerUrl} crop />
       <PageHead
         title={title}
         text={

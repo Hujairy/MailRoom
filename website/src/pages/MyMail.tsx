@@ -5,6 +5,8 @@ import { useStored } from '../lib/stored';
 import { useAsync } from '../lib/useAsync';
 import { EnvelopeIcon } from '../components/icons';
 import { PageHead } from '../components/PageHead';
+import { PageBanner } from '../components/PageBanner';
+import myMailBannerUrl from '../assets/my-mail-banner.jpg';
 import { ReceivedFilter, type Show } from '../components/ReceivedFilter';
 import { Slip } from '../components/Slip';
 import type { PageProps } from './shared';
@@ -22,6 +24,7 @@ export function MyMail({ session, unit, repo, notify }: PageProps) {
 
   return (
     <div className="page">
+      <PageBanner src={myMailBannerUrl} />
       <PageHead
         title="My Personal Mail"
         text={`Find your personal delivery at the ${unit} mail room.`}

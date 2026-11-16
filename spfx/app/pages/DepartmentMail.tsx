@@ -9,6 +9,8 @@ import { useStored } from '../lib/stored';
 import { useAsync } from '../lib/useAsync';
 import { BoxIcon } from '../components/icons';
 import { PageHead } from '../components/PageHead';
+import { PageBanner } from '../components/PageBanner';
+import { departmentMailBannerUrl } from '../assets';
 import { ReceivedFilter, type Show } from '../components/ReceivedFilter';
 import { Slip } from '../components/Slip';
 import { SlipSkeleton } from './MyMail';
@@ -61,6 +63,7 @@ export function DepartmentMail({ session, unit, repo, notify }: PageProps) {
 
   return (
     <div className="page">
+      <PageBanner src={departmentMailBannerUrl} />
       <PageHead
         title="Department Mail"
         text={`Find delivery for department at the ${unit} mail room. Anyone in the department can mark it as received.`}
