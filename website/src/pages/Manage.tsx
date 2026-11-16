@@ -7,7 +7,9 @@ import { useStored } from '../lib/stored';
 import { useAsync } from '../lib/useAsync';
 import { ListIcon, PencilIcon } from '../components/icons';
 import { EditDrawer } from '../components/EditDrawer';
+import { PageBanner } from '../components/PageBanner';
 import { PageHead } from '../components/PageHead';
+import maintenanceBannerUrl from '../assets/maintenance-banner.jpg';
 import { ReceivedFilter, type Show } from '../components/ReceivedFilter';
 import { Segmented } from '../components/Segmented';
 import type { PageProps } from './shared';
@@ -60,6 +62,7 @@ export function Manage({ session, unit, repo, notify }: PageProps) {
 
   return (
     <div className="page page-wide">
+      <PageBanner src={maintenanceBannerUrl} />
       <PageHead
         title="Maintenance"
         text={`Edit details related to delivery at the ${unit} mail room.`}
