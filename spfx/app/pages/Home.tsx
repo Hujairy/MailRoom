@@ -3,15 +3,14 @@ import * as React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { MAX_WAITING } from '../config';
 import { departmentKey } from '../data/rules';
-import { mailKey } from '../data/types';
 import { firstName, greeting, plural } from '../lib/format';
 import { useAsync } from '../lib/useAsync';
 import { useStored } from '../lib/stored';
 import { BoxIcon, EnvelopeIcon, GearIcon, PlusIcon, UsersIcon } from '../components/icons';
-import { Slip } from '../components/Slip';
+import { heroUrl } from '../assets';
 import type { PageProps } from './shared';
 
-export function Home({ session, unit, repo, admin, go, notify }: PageProps) {
+export function Home({ session, unit, repo, admin, go }: PageProps) {
   const { user, directory } = session;
   const [storedDept, setMyDept] = useStored<string>('department', '');
   const myDept = storedDept === '*' ? '' : storedDept;
@@ -50,47 +49,36 @@ export function Home({ session, unit, repo, admin, go, notify }: PageProps) {
 
   return (
     <div className="page home">
-      <header className="home-head">
-        <h1 className="display">{hello}</h1>
-        <p className="lede" aria-live="polite">
-          {mine.loading && !mine.data
-            ? `Checking the ${unit} mail room for you…`
-            : waiting.length === 0
-              ? `You have no personal mail waiting at the ${unit} mail room.`
-              : `${plural(waiting.length, 'delivery', 'deliveries')} ${waiting.length === 1 ? 'is' : 'are'} waiting for you at the ${unit} mail room.`}
-        </p>
-      </header>
+      <section className="hero" aria-labelledby="home-hello">
+        <img className="hero-img" src={heroUrl} alt="" />
+        <div className="hero-text">
+          <h1 className="display" id="home-hello">
+            {hello}
+          </h1>
+          <p className="lede" aria-live="polite">
+            {mine.loading && !mine.data
+              ? `Checking the ${unit} mail room for you…`
+              : waiting.length === 0
+                ? `You have no personal mail waiting at the ${unit} mail room.`
+                : `${plural(waiting.length, 'delivery', 'deliveries')} ${waiting.length === 1 ? 'is' : 'are'} waiting for you at the ${unit} mail room.`}
+          </p>
+          {waiting.length > 0 && (
+            <button type="button" className="hero-btn" onClick={() => go('mine')}>
+              View my mail
+            </button>
+          )}
+        </div>
+      </section>
 
       {mine.error && <p className="error-box" role="alert">{mine.error}</p>}
 
-      {waiting.length > 0 && (
-        <ul className="slips">
-          {waiting.map((item, i) => (
-            <Slip
-              key={mailKey(item)}
-              item={item}
-              index={i}
-              leaveOnConfirm
-              onConfirm={async () => {
-                await repo.receive(item, user);
-              }}
-              onSettled={() => {
-                notify(`Marked ${item.courierCompany} ${item.courierNumber} as received`);
-                void mine.reload();
-                void unitWaiting.reload();
-              }}
-            />
-          ))}
-        </ul>
-      )}
-
       <nav className="tiles" aria-label="Go to">
-        <button type="button" className="tile" onClick={() => go('mine')}>
+        <button type="button" className="tile tile-navy" onClick={() => go('mine')}>
           <EnvelopeIcon width={26} height={26} />
           <span className="tile-title">My Personal Mail</span>
           <span className="tile-text">Find your personal delivery</span>
         </button>
-        <button type="button" className="tile" onClick={() => go('department')}>
+        <button type="button" className="tile tile-navy" onClick={() => go('department')}>
           <BoxIcon width={26} height={26} />
           <span className="tile-title">Department Mail</span>
           <span className="tile-text">

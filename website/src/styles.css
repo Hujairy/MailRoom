@@ -7,6 +7,9 @@
   --brand-deep: #005670;
   --brand-grey: #53565a;
   --brand-stone: #dfdad6;
+  /* Dark blue, from the home banner. */
+  --navy: #0b2d4d;
+  --navy-2: #024870;
 
   --ground: #ece9e6;
   --ground-2: #dfdad6;
@@ -550,6 +553,108 @@ textarea {
   margin: 12px 0 28px;
 }
 
+/* Home banner: the greeting over the mail room picture. */
+.hero {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  min-height: clamp(220px, 24vw, 300px);
+  margin-top: 4px;
+  overflow: hidden;
+  border-radius: var(--r-l);
+  background: var(--navy);
+  color: #ffffff;
+  box-shadow: 0 10px 30px rgba(2, 23, 44, 0.18);
+}
+
+.hero-img {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 72% center;
+  animation: hero-in 1.4s var(--ease-out) both;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(90deg, rgba(2, 20, 40, 0.92) 0%, rgba(2, 20, 40, 0.72) 38%, rgba(2, 20, 40, 0) 72%);
+}
+
+.hero-text {
+  max-width: 640px;
+  padding: 32px 40px;
+  animation: slip-in 0.6s var(--ease-out) 0.15s both;
+}
+
+.hero .display {
+  color: #ffffff;
+}
+
+.hero .lede {
+  color: rgba(255, 255, 255, 0.84);
+}
+
+.hero-btn {
+  margin-top: 18px;
+  padding: 10px 18px;
+  border: 0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--navy);
+  font-weight: 650;
+  cursor: pointer;
+  transition:
+    transform 0.2s var(--ease-out),
+    box-shadow 0.2s;
+}
+
+.hero-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+}
+
+.hero-btn:focus-visible {
+  outline: 3px solid var(--brand-cyan);
+  outline-offset: 3px;
+}
+
+@keyframes hero-in {
+  from {
+    transform: scale(1.06);
+    opacity: 0.6;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 600px) {
+  .hero {
+    align-items: flex-end;
+    min-height: 260px;
+  }
+
+  .hero-img {
+    object-position: 78% center;
+  }
+
+  .hero::before {
+    background: linear-gradient(180deg, rgba(2, 20, 40, 0.25) 0%, rgba(2, 20, 40, 0.9) 70%);
+  }
+
+  .hero-text {
+    padding: 22px 20px;
+  }
+}
+
 .display {
   font-family: var(--font-display);
   font-size: clamp(30px, 4.4vw, 46px);
@@ -610,6 +715,34 @@ textarea {
 .tile-desk {
   background: var(--petrol-soft);
   border-color: transparent;
+}
+
+/* My Personal Mail and Department Mail, in the banner's dark blue. */
+.tile.tile-navy {
+  border-color: transparent;
+  background: linear-gradient(140deg, var(--navy) 0%, var(--navy-2) 100%);
+  color: #ffffff;
+  transition:
+    transform 0.2s var(--ease-out),
+    box-shadow 0.2s;
+}
+
+.tile.tile-navy svg {
+  color: #7fd3ea;
+}
+
+.tile.tile-navy .tile-text {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.tile.tile-navy:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(2, 23, 44, 0.28);
+}
+
+.tile.tile-navy:focus-visible {
+  outline: 3px solid var(--brand-cyan);
+  outline-offset: 3px;
 }
 
 .desk-title {
